@@ -43,6 +43,14 @@ let sortDirection = null; // null = default, 'asc', 'desc'
 const payloadCache = new WeakMap();
 const batchOpsCache = new WeakMap();
 
+// Performance: Limit max entries to prevent memory issues and slow rendering
+const MAX_ENTRIES = 500;
+
+// Performance: Throttle rendering to prevent CPU spikes during high-frequency requests
+let renderPending = false;
+let renderTimeout = null;
+const RENDER_THROTTLE_MS = 100;
+
 // Column widths - load from localStorage or use defaults
 const STORAGE_KEY_COLUMNS = 'networkCopier_columnWidths';
 const STORAGE_KEY_PANELS = 'networkCopier_panelSizes';
@@ -164,6 +172,19 @@ function formatJson(str) {
 function truncate(str, len) {
   if (!str) return '';
   return str.length > len ? str.substring(0, len) + '…' : str;
+}
+
+/**
+ * Escape HTML entities to prevent XSS when using innerHTML
+ */
+function escapeHtml(str) {
+  if (!str) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
 }
 
 /**
@@ -337,6 +358,21 @@ function updateSortIndicators() {
 // Table Rendering
 // ============================================================
 
+/**
+ * Schedule a throttled render to prevent CPU spikes during high-frequency updates.
+ * Multiple calls within RENDER_THROTTLE_MS will be coalesced into one render.
+ */
+function scheduleRender() {
+  if (renderPending) return;
+  
+  renderPending = true;
+  clearTimeout(renderTimeout);
+  renderTimeout = setTimeout(() => {
+    renderPending = false;
+    renderTable();
+  }, RENDER_THROTTLE_MS);
+}
+
 function renderTable() {
   tableBody.innerHTML = "";
   const filtered = getFilteredEntries();
@@ -372,13 +408,21 @@ function renderHttpRow(tr, harEntry, entry) {
   const isBatch = isBatchRequest(harEntry);
   const payloadPreview = getPayloadPreview(entry);
   
+  // Escape all user-provided data to prevent XSS
+  const escapedMethod = escapeHtml(harEntry.request.method);
+  const escapedName = escapeHtml(name);
+  const escapedUrl = escapeHtml(url);
+  const escapedShortUrl = escapeHtml(shortUrl);
+  const escapedPayload = escapeHtml(payloadPreview);
+  const escapedPayloadTitle = escapeHtml(payloadPreview.substring(0, 300));
+  
   tr.innerHTML = `
     <td class="type-icon">${isBatch ? '📦' : '🌐'}</td>
-    <td><span class="method-badge ${getMethodClass(harEntry.request.method)}">${harEntry.request.method}</span></td>
+    <td><span class="method-badge ${getMethodClass(harEntry.request.method)}">${escapedMethod}</span></td>
     <td class="${getStatusClass(harEntry.response.status)}">${harEntry.response.status || '-'}</td>
-    <td class="col-name-data" title="${name}">${name}</td>
-    <td class="col-url-data" title="${url}">${shortUrl}</td>
-    <td class="col-payload-data payload-preview" title="${payloadPreview.substring(0, 300)}">${payloadPreview}</td>
+    <td class="col-name-data" title="${escapedName}">${escapedName}</td>
+    <td class="col-url-data" title="${escapedUrl}">${escapedShortUrl}</td>
+    <td class="col-payload-data payload-preview" title="${escapedPayloadTitle}">${escapedPayload}</td>
   `;
 }
 
@@ -388,13 +432,18 @@ function renderWsRow(tr, wsData) {
   const statusText = wsData.direction === 'send' ? 'SEND' : 'RECV';
   const data = wsData.data || '';
   
+  // Escape all user-provided data to prevent XSS
+  const escapedUrl = escapeHtml(wsData.url || '');
+  const escapedData = escapeHtml(data);
+  const escapedDataTitle = escapeHtml(data.substring(0, 300));
+  
   tr.innerHTML = `
     <td class="type-icon">${dir}</td>
     <td><span class="method-badge method-ws">WS</span></td>
     <td class="${statusClass}">${statusText}</td>
     <td class="col-name-data">WebSocket</td>
-    <td class="col-url-data" title="${wsData.url || ''}">${wsData.url || ''}</td>
-    <td class="col-payload-data payload-preview" title="${data.substring(0, 300)}">${data}</td>
+    <td class="col-url-data" title="${escapedUrl}">${escapedUrl}</td>
+    <td class="col-payload-data payload-preview" title="${escapedDataTitle}">${escapedData}</td>
   `;
 }
 
@@ -860,9 +909,29 @@ document.onkeydown = (e) => {
 // Network Listener
 // ============================================================
 
+/**
+ * Add an entry and enforce the max entries limit.
+ * When limit is exceeded, oldest entries are removed.
+ */
+function addEntry(entry) {
+  entries.push(entry);
+  
+  // Enforce max entries limit to prevent memory issues
+  if (entries.length > MAX_ENTRIES) {
+    const removeCount = entries.length - MAX_ENTRIES;
+    entries.splice(0, removeCount);
+    
+    // Adjust selectedIndex if entries were removed
+    if (selectedIndex !== null) {
+      selectedIndex -= removeCount;
+      if (selectedIndex < 0) selectedIndex = null;
+    }
+  }
+}
+
 chrome.devtools.network.onRequestFinished.addListener((harEntry) => {
-  entries.push({ type: 'http', data: harEntry });
-  renderTable();
+  addEntry({ type: 'http', data: harEntry });
+  scheduleRender();
 });
 
 // ============================================================
@@ -904,8 +973,8 @@ function pollWebSocket() {
       '(function(){ var m = window.__netCopyWS || []; window.__netCopyWS = []; return m; })()',
       (messages, error) => {
         if (!error && messages?.length > 0) {
-          messages.forEach(msg => entries.push({ type: 'ws', data: msg }));
-          renderTable();
+          messages.forEach(msg => addEntry({ type: 'ws', data: msg }));
+          scheduleRender();
         }
       }
     );
