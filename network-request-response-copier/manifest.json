@@ -1,0 +1,17 @@
+{
+  "manifest_version": 3,
+  "name": "Network Request & Response Copier",
+  "description": "DevTools panel to copy network requests with OData batch parsing, WebSocket support, and advanced filtering. Perfect for API debugging.",
+  "version": "1.0.0",
+  "minimum_chrome_version": "110",
+  "devtools_page": "devtools.html",
+  "permissions": ["clipboardWrite"],
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  }
+}
+
+

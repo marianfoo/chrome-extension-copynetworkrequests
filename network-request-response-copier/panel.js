@@ -1,0 +1,925 @@
+// panel.js - Network Copier with resizable columns, batch preview, 3-state sorting
+"use strict";
+
+// ============================================================
+// DOM References
+// ============================================================
+
+const filterInput = document.getElementById("filter-input");
+const methodFilter = document.getElementById("method-filter");
+const showHttpCheckbox = document.getElementById("show-http");
+const showWsCheckbox = document.getElementById("show-ws");
+const prettyJsonCheckbox = document.getElementById("pretty-json");
+const clearLogButton = document.getElementById("clear-log");
+const copySelectedButton = document.getElementById("copy-selected");
+const copyAllButton = document.getElementById("copy-all");
+const tableBody = document.querySelector("#request-table tbody");
+const tableHead = document.querySelector("#request-table thead");
+const requestTable = document.getElementById("request-table");
+const emptyState = document.getElementById("empty-state");
+const summaryEl = document.getElementById("summary");
+const statusEl = document.getElementById("status");
+const clipboardFallback = document.getElementById("clipboard-fallback");
+
+const panelLeft = document.getElementById("panel-left");
+const panelRight = document.getElementById("panel-right");
+const resizerH = document.getElementById("resizer-h");
+const resizerV = document.getElementById("resizer-v");
+const detailPayload = document.getElementById("detail-payload");
+const detailResponse = document.getElementById("detail-response");
+const payloadContent = document.getElementById("payload-content");
+const responseContent = document.getElementById("response-content");
+const copyPayloadBtn = document.getElementById("copy-payload");
+const copyResponseBtn = document.getElementById("copy-response");
+
+// ============================================================
+// State
+// ============================================================
+
+let entries = [];
+let selectedIndex = null;
+let sortColumn = null;
+let sortDirection = null; // null = default, 'asc', 'desc'
+const payloadCache = new WeakMap();
+const batchOpsCache = new WeakMap();
+
+// Column widths - load from localStorage or use defaults
+const STORAGE_KEY_COLUMNS = 'networkCopier_columnWidths';
+const STORAGE_KEY_PANELS = 'networkCopier_panelSizes';
+
+let columnWidths = loadColumnWidths();
+let panelSizes = loadPanelSizes();
+
+function loadColumnWidths() {
+  try {
+    const saved = localStorage.getItem(STORAGE_KEY_COLUMNS);
+    if (saved) return JSON.parse(saved);
+  } catch (e) {}
+  return { name: 120, url: 180, payload: 250 };
+}
+
+function saveColumnWidths() {
+  try {
+    localStorage.setItem(STORAGE_KEY_COLUMNS, JSON.stringify(columnWidths));
+  } catch (e) {}
+}
+
+function loadPanelSizes() {
+  try {
+    const saved = localStorage.getItem(STORAGE_KEY_PANELS);
+    if (saved) return JSON.parse(saved);
+  } catch (e) {}
+  return { leftWidth: 55, payloadHeight: 50 }; // percentages
+}
+
+function savePanelSizes() {
+  try {
+    localStorage.setItem(STORAGE_KEY_PANELS, JSON.stringify(panelSizes));
+  } catch (e) {}
+}
+
+function applyPanelSizes() {
+  panelLeft.style.width = panelSizes.leftWidth + '%';
+  detailPayload.style.flex = `0 0 ${panelSizes.payloadHeight}%`;
+  detailResponse.style.flex = '1';
+}
+
+// ============================================================
+// Helpers
+// ============================================================
+
+function setStatus(msg, type = "ok") {
+  statusEl.textContent = msg || "";
+  statusEl.className = "status " + (msg ? type : "");
+  if (msg) setTimeout(() => { if (statusEl.textContent === msg) statusEl.textContent = ""; }, 3000);
+}
+
+function updateSummary() {
+  const filtered = getFilteredEntries();
+  const httpCount = entries.filter(e => e.type === 'http').length;
+  const wsCount = entries.filter(e => e.type === 'ws').length;
+  summaryEl.textContent = `${httpCount} HTTP, ${wsCount} WS • ${filtered.length} shown`;
+  copySelectedButton.disabled = selectedIndex == null;
+  copyAllButton.disabled = filtered.length === 0;
+}
+
+function isBatchRequest(harEntry) {
+  const url = harEntry.request?.url || '';
+  const ct = getHeaderValue(harEntry.request?.headers, 'content-type') || '';
+  return url.includes('$batch') || ct.includes('multipart/mixed');
+}
+
+function getHeaderValue(headers, name) {
+  if (!headers) return null;
+  const h = headers.find(h => h.name.toLowerCase() === name.toLowerCase());
+  return h ? h.value : null;
+}
+
+function extractPayload(harEntry) {
+  if (payloadCache.has(harEntry)) return payloadCache.get(harEntry);
+  const req = harEntry.request;
+  if (!req?.postData) { payloadCache.set(harEntry, ''); return ''; }
+  let payload = req.postData.text || '';
+  if (!payload && req.postData.params) {
+    payload = req.postData.params.map(p => `${p.name}=${p.value}`).join('&');
+  }
+  payloadCache.set(harEntry, payload);
+  return payload;
+}
+
+/**
+ * Extract batch operations from payload (e.g., "GET ZZHandlingUnitType")
+ */
+function extractBatchOperations(harEntry) {
+  if (batchOpsCache.has(harEntry)) return batchOpsCache.get(harEntry);
+  
+  const payload = extractPayload(harEntry);
+  if (!payload) { batchOpsCache.set(harEntry, []); return []; }
+  
+  const operations = [];
+  const regex = /(GET|POST|PUT|PATCH|DELETE|MERGE)\s+([^\s]+)\s+HTTP/gi;
+  let match;
+  
+  while ((match = regex.exec(payload)) !== null) {
+    operations.push({ method: match[1].toUpperCase(), url: match[2] });
+  }
+  
+  batchOpsCache.set(harEntry, operations);
+  return operations;
+}
+
+function getContent(harEntry) {
+  return new Promise(resolve => {
+    try { harEntry.getContent(body => resolve(body || "")); }
+    catch { resolve(""); }
+  });
+}
+
+function formatJson(str) {
+  if (!str || !prettyJsonCheckbox.checked) return str;
+  try { return JSON.stringify(JSON.parse(str), null, 2); }
+  catch { return str; }
+}
+
+function truncate(str, len) {
+  if (!str) return '';
+  return str.length > len ? str.substring(0, len) + '…' : str;
+}
+
+/**
+ * Decode URL-encoded strings safely
+ */
+function urlDecode(str) {
+  if (!str) return str;
+  try {
+    return decodeURIComponent(str.replace(/\+/g, ' '));
+  } catch (e) {
+    return str;
+  }
+}
+
+function getMethodClass(method) {
+  const m = (method || '').toLowerCase();
+  return 'method-' + (['get','post','put','patch','delete','ws'].includes(m) ? m : 'other');
+}
+
+function getStatusClass(status) {
+  if (status >= 200 && status < 300) return 'status-2xx';
+  if (status >= 300 && status < 400) return 'status-3xx';
+  if (status >= 400 && status < 500) return 'status-4xx';
+  if (status >= 500) return 'status-5xx';
+  return '';
+}
+
+function getEntryName(entry) {
+  if (entry.type === 'ws') return 'WebSocket';
+  const url = entry.data.request.url;
+  const name = url.split('/').pop().split('?')[0];
+  return name || 'request';
+}
+
+function getEntryUrl(entry) {
+  if (entry.type === 'ws') return entry.data.url || '';
+  return entry.data.request.url.replace(/^https?:\/\/[^/]+/, '');
+}
+
+/**
+ * Get payload preview - for batch requests, show operations like "GET ZZHandlingUnitType"
+ * URLs are decoded for readability
+ */
+function getPayloadPreview(entry) {
+  if (entry.type === 'ws') return entry.data.data || '';
+  
+  const harEntry = entry.data;
+  
+  if (isBatchRequest(harEntry)) {
+    const ops = extractBatchOperations(harEntry);
+    if (ops.length > 0) {
+      // Format: "GET Entity1 | POST Entity2" etc. - with decoded URLs
+      return ops.map(op => `${op.method} ${urlDecode(op.url)}`).join(' | ');
+    }
+  }
+  
+  // Regular request - show JSON payload
+  return extractPayload(harEntry);
+}
+
+// ============================================================
+// Filtering
+// ============================================================
+
+function matchesFilter(entry) {
+  if (entry.type === 'http' && !showHttpCheckbox.checked) return false;
+  if (entry.type === 'ws' && !showWsCheckbox.checked) return false;
+  
+  // Method filter (only applies to HTTP requests)
+  const selectedMethod = methodFilter.value;
+  if (selectedMethod && entry.type === 'http') {
+    const entryMethod = entry.data.request.method.toUpperCase();
+    if (entryMethod !== selectedMethod) return false;
+  }
+  
+  // WebSocket always shows if checkbox is on (not filtered by text or method)
+  if (entry.type === 'ws') return true;
+  
+  const filter = filterInput.value.trim().toLowerCase();
+  if (!filter) return true;
+  
+  const harEntry = entry.data;
+  const payloadPreview = getPayloadPreview(entry);
+  const searchText = [
+    harEntry.request.url,
+    harEntry.request.method,
+    String(harEntry.response.status),
+    getEntryName(entry),
+    payloadPreview,
+    extractPayload(harEntry)
+  ].join(' ').toLowerCase();
+  
+  return searchText.includes(filter);
+}
+
+function getFilteredEntries() {
+  let filtered = entries.filter(matchesFilter);
+  
+  // Apply sorting only if sortColumn and sortDirection are set
+  if (sortColumn && sortDirection) {
+    filtered.sort((a, b) => {
+      let valA, valB;
+      
+      switch (sortColumn) {
+        case 'method':
+          valA = a.type === 'http' ? a.data.request.method : 'WS';
+          valB = b.type === 'http' ? b.data.request.method : 'WS';
+          break;
+        case 'status':
+          valA = a.type === 'http' ? a.data.response.status : 0;
+          valB = b.type === 'http' ? b.data.response.status : 0;
+          break;
+        case 'name':
+          valA = getEntryName(a);
+          valB = getEntryName(b);
+          break;
+        case 'url':
+          valA = getEntryUrl(a);
+          valB = getEntryUrl(b);
+          break;
+        default:
+          return 0;
+      }
+      
+      if (typeof valA === 'string') {
+        valA = valA.toLowerCase();
+        valB = valB.toLowerCase();
+      }
+      
+      if (valA < valB) return sortDirection === 'asc' ? -1 : 1;
+      if (valA > valB) return sortDirection === 'asc' ? 1 : -1;
+      return 0;
+    });
+  }
+  
+  return filtered;
+}
+
+// ============================================================
+// Sorting (3-state: asc → desc → default)
+// ============================================================
+
+function handleSort(column) {
+  if (sortColumn === column) {
+    // Cycle through: asc → desc → null (default)
+    if (sortDirection === 'asc') {
+      sortDirection = 'desc';
+    } else if (sortDirection === 'desc') {
+      sortColumn = null;
+      sortDirection = null;
+    }
+  } else {
+    sortColumn = column;
+    sortDirection = 'asc';
+  }
+  
+  updateSortIndicators();
+  renderTable();
+}
+
+function updateSortIndicators() {
+  tableHead.querySelectorAll('th').forEach(th => {
+    th.classList.remove('sort-asc', 'sort-desc');
+    if (th.dataset.sort === sortColumn && sortDirection) {
+      th.classList.add(sortDirection === 'asc' ? 'sort-asc' : 'sort-desc');
+    }
+  });
+}
+
+// ============================================================
+// Table Rendering
+// ============================================================
+
+function renderTable() {
+  tableBody.innerHTML = "";
+  const filtered = getFilteredEntries();
+  
+  // Apply column widths
+  applyColumnWidths();
+  
+  filtered.forEach((entry) => {
+    const originalIndex = entries.indexOf(entry);
+    const tr = document.createElement("tr");
+    tr.dataset.index = originalIndex;
+    if (originalIndex === selectedIndex) tr.classList.add("selected");
+    
+    if (entry.type === 'http') {
+      renderHttpRow(tr, entry.data, entry);
+    } else {
+      renderWsRow(tr, entry.data);
+    }
+    
+    tr.onclick = () => selectEntry(originalIndex);
+    tableBody.appendChild(tr);
+  });
+  
+  emptyState.classList.toggle("visible", filtered.length === 0);
+  copyAllButton.disabled = filtered.length === 0;
+  updateSummary();
+}
+
+function renderHttpRow(tr, harEntry, entry) {
+  const url = harEntry.request.url;
+  const shortUrl = url.replace(/^https?:\/\/[^/]+/, '');
+  const name = url.split('/').pop().split('?')[0] || 'request';
+  const isBatch = isBatchRequest(harEntry);
+  const payloadPreview = getPayloadPreview(entry);
+  
+  tr.innerHTML = `
+    <td class="type-icon">${isBatch ? '📦' : '🌐'}</td>
+    <td><span class="method-badge ${getMethodClass(harEntry.request.method)}">${harEntry.request.method}</span></td>
+    <td class="${getStatusClass(harEntry.response.status)}">${harEntry.response.status || '-'}</td>
+    <td class="col-name-data" title="${name}">${name}</td>
+    <td class="col-url-data" title="${url}">${shortUrl}</td>
+    <td class="col-payload-data payload-preview" title="${payloadPreview.substring(0, 300)}">${payloadPreview}</td>
+  `;
+}
+
+function renderWsRow(tr, wsData) {
+  const dir = wsData.direction === 'send' ? '⬆️' : '⬇️';
+  const statusClass = wsData.direction === 'send' ? 'ws-send' : 'ws-recv';
+  const statusText = wsData.direction === 'send' ? 'SEND' : 'RECV';
+  const data = wsData.data || '';
+  
+  tr.innerHTML = `
+    <td class="type-icon">${dir}</td>
+    <td><span class="method-badge method-ws">WS</span></td>
+    <td class="${statusClass}">${statusText}</td>
+    <td class="col-name-data">WebSocket</td>
+    <td class="col-url-data" title="${wsData.url || ''}">${wsData.url || ''}</td>
+    <td class="col-payload-data payload-preview" title="${data.substring(0, 300)}">${data}</td>
+  `;
+}
+
+function applyColumnWidths() {
+  // Fixed column widths (icon=32, method=55, status=50)
+  const fixedWidth = 32 + 55 + 50;
+  
+  // Apply directly to th elements
+  const nameCol = tableHead.querySelector('.col-name');
+  const urlCol = tableHead.querySelector('.col-url');
+  const payloadCol = tableHead.querySelector('.col-payload');
+  
+  if (nameCol) nameCol.style.width = columnWidths.name + 'px';
+  if (urlCol) urlCol.style.width = columnWidths.url + 'px';
+  if (payloadCol) payloadCol.style.width = columnWidths.payload + 'px';
+  
+  // Set total table width so resizing one column doesn't affect others
+  const totalWidth = fixedWidth + columnWidths.name + columnWidths.url + columnWidths.payload + 30;
+  requestTable.style.width = totalWidth + 'px';
+}
+
+// ============================================================
+// Column Resizing
+// ============================================================
+
+// Global state for column resizing
+const colResizeState = {
+  active: false,
+  startX: 0,
+  columnKey: null,
+  thElement: null,
+  startWidth: 0
+};
+
+function setupColumnResizers() {
+  // Use event delegation on the table head
+  tableHead.addEventListener('mousedown', (e) => {
+    const resizer = e.target.closest('.col-resizer');
+    if (!resizer) return;
+    
+    e.preventDefault();
+    e.stopPropagation();
+    
+    const th = resizer.parentElement;
+    colResizeState.thElement = th;
+    colResizeState.columnKey = th.classList.contains('col-name') ? 'name' :
+                               th.classList.contains('col-url') ? 'url' : 'payload';
+    
+    colResizeState.active = true;
+    colResizeState.startX = e.clientX;
+    // Get actual current width of the th element
+    colResizeState.startWidth = th.offsetWidth;
+    
+    resizer.classList.add('active');
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+  });
+  
+  // Global mousemove for column resize
+  document.addEventListener('mousemove', (e) => {
+    if (!colResizeState.active || !colResizeState.thElement) return;
+    
+    const diff = e.clientX - colResizeState.startX;
+    const newWidth = Math.max(60, colResizeState.startWidth + diff);
+    
+    // Update column width and recalculate table width
+    columnWidths[colResizeState.columnKey] = newWidth;
+    applyColumnWidths();
+  });
+  
+  // Global mouseup for column resize
+  document.addEventListener('mouseup', () => {
+    if (!colResizeState.active) return;
+    
+    // Remove active class from resizer
+    const activeResizer = tableHead.querySelector('.col-resizer.active');
+    if (activeResizer) activeResizer.classList.remove('active');
+    
+    colResizeState.active = false;
+    colResizeState.thElement = null;
+    document.body.style.cursor = '';
+    document.body.style.userSelect = '';
+    
+    // Save column widths to localStorage
+    saveColumnWidths();
+  });
+}
+
+// ============================================================
+// Selection & Detail View
+// ============================================================
+
+async function selectEntry(index) {
+  selectedIndex = index;
+  renderTable();
+  
+  const entry = entries[index];
+  if (!entry) return;
+  
+  copySelectedButton.disabled = false;
+  
+  if (entry.type === 'http') {
+    await showHttpDetails(entry.data);
+  } else {
+    showWsDetails(entry.data);
+  }
+}
+
+async function showHttpDetails(harEntry) {
+  const payload = extractPayload(harEntry);
+  const url = harEntry.request.url;
+  const method = harEntry.request.method;
+  
+  if (isBatchRequest(harEntry)) {
+    payloadContent.textContent = formatBatchPayload(payload);
+  } else {
+    // For regular requests, show method + decoded URL, then body
+    const decodedUrl = urlDecode(url);
+    const shortUrl = decodedUrl.replace(/^https?:\/\/[^/]+/, '');
+    let content = `──── ${method} ${shortUrl} ────\n`;
+    content += formatJson(payload) || '(no body)';
+    payloadContent.textContent = content;
+  }
+  
+  responseContent.textContent = 'Loading...';
+  const responseBody = await getContent(harEntry);
+  
+  if (isBatchRequest(harEntry)) {
+    responseContent.textContent = formatBatchResponse(responseBody);
+  } else {
+    responseContent.textContent = formatJson(responseBody) || '(empty)';
+  }
+}
+
+function showWsDetails(wsData) {
+  payloadContent.textContent = wsData.direction === 'send' 
+    ? formatJson(wsData.data) || '(empty)'
+    : '(WebSocket received - see response)';
+  
+  responseContent.textContent = wsData.direction === 'receive'
+    ? formatJson(wsData.data) || '(empty)'
+    : '(WebSocket sent - see payload)';
+}
+
+// ============================================================
+// Batch Formatting
+// ============================================================
+
+function formatBatchPayload(payload) {
+  if (!payload) return '(empty)';
+  
+  const lines = [];
+  const regex = /(GET|POST|PUT|PATCH|DELETE|MERGE)\s+([^\s]+)\s+HTTP/gi;
+  let match;
+  const positions = [];
+  
+  while ((match = regex.exec(payload)) !== null) {
+    positions.push({ index: match.index, method: match[1], url: match[2], full: match[0] });
+  }
+  
+  if (positions.length === 0) return payload;
+  
+  for (let i = 0; i < positions.length; i++) {
+    const pos = positions[i];
+    const endIdx = i < positions.length - 1 ? positions[i + 1].index : payload.length;
+    const section = payload.substring(pos.index + pos.full.length, endIdx);
+    const jsonMatch = section.match(/\{[\s\S]*\}/);
+    const body = jsonMatch ? jsonMatch[0] : '';
+    
+    // Decode URL for readability
+    const decodedUrl = urlDecode(pos.url);
+    lines.push(`──── ${pos.method} ${decodedUrl} ────`);
+    lines.push(body ? formatJson(body) : '(no body)');
+    lines.push('');
+  }
+  
+  return lines.join('\n');
+}
+
+function formatBatchResponse(response) {
+  if (!response) return '(empty)';
+  
+  const lines = [];
+  const regex = /HTTP\/[\d.]+\s+(\d+)\s*([^\r\n]*)/gi;
+  let match;
+  const positions = [];
+  
+  while ((match = regex.exec(response)) !== null) {
+    positions.push({ index: match.index, status: match[1], text: match[2], full: match[0] });
+  }
+  
+  if (positions.length === 0) return response;
+  
+  for (let i = 0; i < positions.length; i++) {
+    const pos = positions[i];
+    const endIdx = i < positions.length - 1 ? positions[i + 1].index : response.length;
+    const section = response.substring(pos.index + pos.full.length, endIdx);
+    const jsonMatch = section.match(/\{[\s\S]*?\}(?=\s*(?:--|$|\r?\n--))/);
+    const body = jsonMatch ? jsonMatch[0] : '';
+    
+    lines.push(`──── Response ${pos.status} ${pos.text} ────`);
+    lines.push(body ? formatJson(body) : '(no body)');
+    lines.push('');
+  }
+  
+  return lines.join('\n');
+}
+
+// ============================================================
+// Clipboard
+// ============================================================
+
+async function copyToClipboard(text) {
+  // Method 1: Copy via inspected page using JSON encoding (most reliable for DevTools)
+  try {
+    const jsonText = JSON.stringify(text);
+    const result = await new Promise((resolve) => {
+      chrome.devtools.inspectedWindow.eval(
+        `(function() {
+          try {
+            const text = ${jsonText};
+            const ta = document.createElement('textarea');
+            ta.value = text;
+            ta.style.position = 'fixed';
+            ta.style.left = '-9999px';
+            document.body.appendChild(ta);
+            ta.select();
+            const ok = document.execCommand('copy');
+            document.body.removeChild(ta);
+            return ok;
+          } catch(e) { return false; }
+        })()`,
+        (result, err) => resolve(!err && result)
+      );
+    });
+    if (result) return true;
+  } catch (e) {
+    console.log('Inspected page copy failed:', e);
+  }
+  
+  // Method 2: Fallback using textarea in panel
+  try {
+    clipboardFallback.value = text;
+    clipboardFallback.style.position = 'fixed';
+    clipboardFallback.style.left = '0';
+    clipboardFallback.style.top = '0';
+    clipboardFallback.focus();
+    clipboardFallback.select();
+    const ok = document.execCommand('copy');
+    clipboardFallback.style.left = '-9999px';
+    if (ok) return true;
+  } catch (e) {
+    console.log('Panel copy failed:', e);
+  }
+  
+  // Method 3: Log to console as last resort
+  console.log('=== COPY FAILED - Text logged below ===');
+  console.log(text);
+  return false;
+}
+
+async function formatEntryForCopy(entry) {
+  let text = '';
+  
+  if (entry.type === 'http') {
+    const harEntry = entry.data;
+    const payload = extractPayload(harEntry);
+    const response = await getContent(harEntry);
+    
+    text = `═══════════════════════════════════════════════════════════════\n`;
+    text += `REQUEST: ${harEntry.request.method} ${harEntry.request.url}\n`;
+    text += `═══════════════════════════════════════════════════════════════\n\n`;
+    
+    if (isBatchRequest(harEntry)) {
+      text += formatBatchPayload(payload);
+    } else {
+      text += `Payload:\n${formatJson(payload) || '(empty)'}\n`;
+    }
+    
+    text += `\n───────────────────────────────────────────────────────────────\n`;
+    text += `RESPONSE: ${harEntry.response.status} ${harEntry.response.statusText || ''}\n`;
+    text += `───────────────────────────────────────────────────────────────\n\n`;
+    
+    if (isBatchRequest(harEntry)) {
+      text += formatBatchResponse(response);
+    } else {
+      text += formatJson(response) || '(empty)';
+    }
+  } else {
+    text = `═══════════════════════════════════════════════════════════════\n`;
+    text += `WEBSOCKET ${entry.data.direction.toUpperCase()}\n`;
+    text += `═══════════════════════════════════════════════════════════════\n\n`;
+    text += formatJson(entry.data.data) || '(empty)';
+  }
+  
+  return text;
+}
+
+async function copySelected() {
+  if (selectedIndex == null) return;
+  
+  setStatus("Copying...", "ok");
+  const text = await formatEntryForCopy(entries[selectedIndex]);
+  
+  if (await copyToClipboard(text)) {
+    setStatus("✓ Copied!", "ok");
+  } else {
+    setStatus("✗ Copy failed", "error");
+    console.log("Copy text:", text);
+  }
+}
+
+async function copyAllFiltered() {
+  const filtered = getFilteredEntries();
+  if (filtered.length === 0) return;
+  
+  setStatus(`Copying ${filtered.length}...`, "ok");
+  
+  const parts = [];
+  for (const entry of filtered) {
+    parts.push(await formatEntryForCopy(entry));
+  }
+  
+  const text = parts.join('\n\n\n');
+  
+  if (await copyToClipboard(text)) {
+    setStatus(`✓ ${filtered.length} copied!`, "ok");
+  } else {
+    setStatus("✗ Copy failed", "error");
+    console.log("Copy text:", text);
+  }
+}
+
+// ============================================================
+// Panel Resizers
+// ============================================================
+
+function setupPanelResizers() {
+  let isResizing = false;
+  let currentResizer = null;
+  
+  resizerH.onmousedown = (e) => {
+    isResizing = true;
+    currentResizer = 'h';
+    resizerH.classList.add('active');
+    document.body.classList.add('resizing');
+    e.preventDefault();
+  };
+  
+  resizerV.onmousedown = (e) => {
+    isResizing = true;
+    currentResizer = 'v';
+    resizerV.classList.add('active');
+    document.body.classList.add('resizing-v');
+    e.preventDefault();
+  };
+  
+  document.onmousemove = (e) => {
+    if (!isResizing) return;
+    
+    if (currentResizer === 'h') {
+      const rect = panelLeft.parentElement.getBoundingClientRect();
+      const pct = ((e.clientX - rect.left) / rect.width) * 100;
+      if (pct > 20 && pct < 80) {
+        panelLeft.style.width = pct + '%';
+        panelSizes.leftWidth = pct;
+      }
+    } else {
+      const rect = panelRight.getBoundingClientRect();
+      const pct = ((e.clientY - rect.top) / rect.height) * 100;
+      if (pct > 15 && pct < 85) {
+        detailPayload.style.flex = `0 0 ${pct}%`;
+        detailResponse.style.flex = '1';
+        panelSizes.payloadHeight = pct;
+      }
+    }
+  };
+  
+  document.onmouseup = () => {
+    if (isResizing) {
+      isResizing = false;
+      resizerH.classList.remove('active');
+      resizerV.classList.remove('active');
+      document.body.classList.remove('resizing', 'resizing-v');
+      // Save panel sizes to localStorage
+      savePanelSizes();
+    }
+  };
+}
+
+// ============================================================
+// Events
+// ============================================================
+
+let filterTimeout = null;
+filterInput.oninput = () => {
+  clearTimeout(filterTimeout);
+  filterTimeout = setTimeout(renderTable, 150);
+};
+
+methodFilter.onchange = renderTable;
+showHttpCheckbox.onchange = renderTable;
+showWsCheckbox.onchange = renderTable;
+prettyJsonCheckbox.onchange = () => { if (selectedIndex != null) selectEntry(selectedIndex); };
+
+clearLogButton.onclick = () => {
+  entries = [];
+  selectedIndex = null;
+  sortColumn = null;
+  sortDirection = null;
+  updateSortIndicators();
+  payloadContent.textContent = 'Select a request to view payload';
+  responseContent.textContent = 'Select a request to view response';
+  renderTable();
+  setStatus("Cleared", "ok");
+};
+
+copySelectedButton.onclick = copySelected;
+copyAllButton.onclick = copyAllFiltered;
+copyPayloadBtn.onclick = async () => {
+  if (await copyToClipboard(payloadContent.textContent)) setStatus("✓ Payload copied!", "ok");
+};
+copyResponseBtn.onclick = async () => {
+  if (await copyToClipboard(responseContent.textContent)) setStatus("✓ Response copied!", "ok");
+};
+
+// Sort header clicks (but not on resizer)
+tableHead.onclick = (e) => {
+  if (e.target.classList.contains('col-resizer')) return;
+  const th = e.target.closest('th.sortable');
+  if (th && th.dataset.sort) {
+    handleSort(th.dataset.sort);
+  }
+};
+
+// Keyboard
+document.onkeydown = (e) => {
+  if (e.target.tagName === 'INPUT') return;
+  
+  if ((e.ctrlKey || e.metaKey) && e.key === 'c' && selectedIndex != null) {
+    e.preventDefault();
+    copySelected();
+  }
+  
+  if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+    e.preventDefault();
+    const filtered = getFilteredEntries();
+    const indices = filtered.map(entry => entries.indexOf(entry));
+    if (indices.length === 0) return;
+    
+    if (selectedIndex == null) {
+      selectEntry(indices[0]);
+    } else {
+      const pos = indices.indexOf(selectedIndex);
+      const newPos = e.key === 'ArrowDown' ? Math.min(pos + 1, indices.length - 1) : Math.max(pos - 1, 0);
+      selectEntry(indices[newPos]);
+    }
+    tableBody.querySelector('.selected')?.scrollIntoView({ block: 'nearest' });
+  }
+};
+
+// ============================================================
+// Network Listener
+// ============================================================
+
+chrome.devtools.network.onRequestFinished.addListener((harEntry) => {
+  entries.push({ type: 'http', data: harEntry });
+  renderTable();
+});
+
+// ============================================================
+// WebSocket Capture
+// ============================================================
+
+function setupWebSocketCapture() {
+  const script = `
+    (function() {
+      if (window.__netCopyWS) return 'exists';
+      window.__netCopyWS = [];
+      const OrigWS = window.WebSocket;
+      window.WebSocket = function(url, protocols) {
+        const ws = protocols ? new OrigWS(url, protocols) : new OrigWS(url);
+        ws.addEventListener('message', function(e) {
+          try { window.__netCopyWS.push({ direction: 'receive', url: url, data: typeof e.data === 'string' ? e.data : '[Binary]', time: Date.now() }); } catch {}
+        });
+        const origSend = ws.send.bind(ws);
+        ws.send = function(data) {
+          try { window.__netCopyWS.push({ direction: 'send', url: url, data: typeof data === 'string' ? data : '[Binary]', time: Date.now() }); } catch {}
+          return origSend(data);
+        };
+        return ws;
+      };
+      Object.assign(window.WebSocket, OrigWS);
+      window.WebSocket.prototype = OrigWS.prototype;
+      return 'ok';
+    })();
+  `;
+  
+  chrome.devtools.inspectedWindow.eval(script, (result, error) => {
+    if (!error) pollWebSocket();
+  });
+}
+
+function pollWebSocket() {
+  setInterval(() => {
+    chrome.devtools.inspectedWindow.eval(
+      '(function(){ var m = window.__netCopyWS || []; window.__netCopyWS = []; return m; })()',
+      (messages, error) => {
+        if (!error && messages?.length > 0) {
+          messages.forEach(msg => entries.push({ type: 'ws', data: msg }));
+          renderTable();
+        }
+      }
+    );
+  }, 300);
+}
+
+// ============================================================
+// Init
+// ============================================================
+
+applyColumnWidths();
+applyPanelSizes();
+setupColumnResizers();
+setupPanelResizers();
+setupWebSocketCapture();
+renderTable();
+console.log('[NetworkCopier] Ready');

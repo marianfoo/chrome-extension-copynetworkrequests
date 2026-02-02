@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Network Request & Response Copier</title>
+    <link rel="stylesheet" href="panel.css" />
+  </head>
+  <body>
+    <!-- Toolbar -->
+    <header class="toolbar">
+      <div class="toolbar-row">
+        <div class="toolbar-left">
+          <span class="title">🌐 Network Copier</span>
+          <input id="filter-input" type="text" placeholder="Filter URL, method, status, payload..." />
+        </div>
+        <div class="toolbar-right">
+          <select id="method-filter" title="Filter by HTTP method">
+            <option value="">All Methods</option>
+            <option value="GET">GET</option>
+            <option value="POST">POST</option>
+            <option value="PUT">PUT</option>
+            <option value="PATCH">PATCH</option>
+            <option value="DELETE">DELETE</option>
+          </select>
+          <label class="checkbox-label"><input type="checkbox" id="show-http" checked /> HTTP</label>
+          <label class="checkbox-label"><input type="checkbox" id="show-ws" checked /> WS</label>
+          <label class="checkbox-label"><input type="checkbox" id="pretty-json" checked /> Pretty</label>
+          <button id="clear-log">Clear</button>
+          <button id="copy-selected" disabled>📋 Copy Selected</button>
+          <button id="copy-all">📑 Copy All Filtered</button>
+        </div>
+      </div>
+    </header>
+
+    <!-- Main split panel -->
+    <main class="split-container">
+      <!-- Left: Request list -->
+      <div class="panel panel-left" id="panel-left">
+        <div class="table-wrapper">
+          <table id="request-table">
+            <thead>
+              <tr>
+                <th class="col-icon">Type</th>
+                <th class="col-method sortable" data-sort="method">Method<span class="sort-icon"></span></th>
+                <th class="col-status sortable" data-sort="status">Status<span class="sort-icon"></span></th>
+                <th class="col-name sortable resizable" data-sort="name">Name<span class="sort-icon"></span><div class="col-resizer"></div></th>
+                <th class="col-url sortable resizable" data-sort="url">URL<span class="sort-icon"></span><div class="col-resizer"></div></th>
+                <th class="col-payload resizable">Payload Preview<div class="col-resizer"></div></th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <div class="empty-state" id="empty-state">
+          <div class="empty-state-icon">📡</div>
+          <div class="empty-state-text">No requests captured yet.<br>Interact with the page to see requests.</div>
+        </div>
+      </div>
+
+      <!-- Resizer -->
+      <div class="resizer resizer-h" id="resizer-h"></div>
+
+      <!-- Right: Details panel -->
+      <div class="panel panel-right" id="panel-right">
+        <div class="detail-section" id="detail-payload">
+          <div class="detail-header">
+            <span class="detail-title">📤 Request Payload</span>
+            <button class="copy-btn" id="copy-payload">📋 Copy</button>
+          </div>
+          <pre class="detail-content" id="payload-content">Select a request to view payload</pre>
+        </div>
+        
+        <div class="resizer resizer-v" id="resizer-v"></div>
+        
+        <div class="detail-section" id="detail-response">
+          <div class="detail-header">
+            <span class="detail-title">📥 Response Body</span>
+            <button class="copy-btn" id="copy-response">📋 Copy</button>
+          </div>
+          <pre class="detail-content" id="response-content">Select a request to view response</pre>
+        </div>
+      </div>
+    </main>
+
+    <!-- Footer -->
+    <footer class="footer">
+      <span id="summary">0 requests</span>
+      <span id="status" class="status"></span>
+    </footer>
+
+    <textarea id="clipboard-fallback" style="position:absolute;left:-9999px;"></textarea>
+    <script src="panel.js"></script>
+  </body>
+</html>

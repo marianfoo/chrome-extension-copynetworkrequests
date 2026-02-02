@@ -1,0 +1,42 @@
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# Linux
+*~
+
+# IDE / Editor
+.idea/
+.vscode/
+*.swp
+*.swo
+*.sublime-workspace
+*.sublime-project
+
+# Build artifacts
+*.zip
+dist/
+build/
+
+# Logs
+*.log
+npm-debug.log*
+
+# Node (if adding build tools later)
+node_modules/
+package-lock.json
+
+# Chrome extension packaging
+*.crx
+*.pem
+
+# Temporary files
+*.tmp
+*.temp
