@@ -552,6 +552,13 @@ async function selectEntry(index) {
   }
 }
 
+function deselectEntry() {
+  selectedIndex = null;
+  payloadContent.textContent = 'Select a request to view payload';
+  responseContent.textContent = 'Select a request to view response';
+  renderTable();
+}
+
 async function showHttpDetails(harEntry) {
   const payload = extractPayload(harEntry);
   const url = harEntry.request.url;
@@ -657,7 +664,17 @@ function formatBatchResponse(response) {
 // ============================================================
 
 async function copyToClipboard(text) {
-  // Method 1: Copy via inspected page using JSON encoding (most reliable for DevTools)
+  // Method 1: Clipboard API (preferred when available)
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+  } catch (e) {
+    console.log('Clipboard API failed:', e);
+  }
+  
+  // Method 2: Copy via inspected page using JSON encoding (DevTools-safe fallback)
   try {
     const jsonText = JSON.stringify(text);
     const result = await new Promise((resolve) => {
@@ -684,7 +701,7 @@ async function copyToClipboard(text) {
     console.log('Inspected page copy failed:', e);
   }
   
-  // Method 2: Fallback using textarea in panel
+  // Method 3: Fallback using textarea in panel
   try {
     clipboardFallback.value = text;
     clipboardFallback.style.position = 'fixed';
@@ -882,6 +899,11 @@ tableHead.onclick = (e) => {
 // Keyboard
 document.onkeydown = (e) => {
   if (e.target.tagName === 'INPUT') return;
+  
+  if (e.key === 'Escape') {
+    e.preventDefault();
+    deselectEntry();
+  }
   
   if ((e.ctrlKey || e.metaKey) && e.key === 'c' && selectedIndex != null) {
     e.preventDefault();
