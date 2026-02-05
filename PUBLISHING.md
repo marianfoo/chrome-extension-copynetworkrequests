@@ -4,19 +4,31 @@ This guide covers how to publish the Network Request & Response Copier extension
 
 ## Table of Contents
 
-- [Prerequisites](#prerequisites)
-- [Manual Publishing](#manual-publishing)
-  - [Step 1: Prepare the Package](#step-1-prepare-the-package)
-  - [Step 2: Create Store Listing](#step-2-create-store-listing)
-  - [Step 3: Add Store Assets](#step-3-add-store-assets)
-  - [Step 4: Privacy & Permissions](#step-4-privacy--permissions)
-  - [Step 5: Submit for Review](#step-5-submit-for-review)
-- [Automated Publishing (GitHub Actions)](#automated-publishing-github-actions)
-  - [Setting Up Chrome Web Store API](#setting-up-chrome-web-store-api)
-  - [Configuring GitHub Secrets](#configuring-github-secrets)
-  - [Creating a Release](#creating-a-release)
-- [Chrome Web Store Best Practices](#chrome-web-store-best-practices)
-- [Troubleshooting](#troubleshooting)
+- [Publishing Guide for Chrome Web Store](#publishing-guide-for-chrome-web-store)
+  - [Table of Contents](#table-of-contents)
+  - [Prerequisites](#prerequisites)
+  - [Manual Publishing](#manual-publishing)
+    - [Step 1: Prepare the Package](#step-1-prepare-the-package)
+    - [Step 2: Upload in Developer Dashboard](#step-2-upload-in-developer-dashboard)
+    - [Step 3: Complete Listing, Privacy, and Distribution](#step-3-complete-listing-privacy-and-distribution)
+    - [Step 4: Add Store Assets](#step-4-add-store-assets)
+    - [Step 5: Submit for Review](#step-5-submit-for-review)
+    - [Updating an Existing Item](#updating-an-existing-item)
+  - [Automated Publishing (GitHub Actions)](#automated-publishing-github-actions)
+    - [Setting Up Chrome Web Store API](#setting-up-chrome-web-store-api)
+    - [Configuring GitHub Secrets](#configuring-github-secrets)
+    - [Creating a Release](#creating-a-release)
+  - [Chrome Web Store Best Practices](#chrome-web-store-best-practices)
+    - [Manifest Requirements](#manifest-requirements)
+    - [Code Quality](#code-quality)
+    - [Privacy \& Security](#privacy--security)
+    - [Store Listing](#store-listing)
+    - [Common Rejection Reasons](#common-rejection-reasons)
+  - [Troubleshooting](#troubleshooting)
+    - [Extension Not Approved](#extension-not-approved)
+    - [API Upload Fails](#api-upload-fails)
+    - [Version Mismatch](#version-mismatch)
+  - [Quick Reference: Release Checklist](#quick-reference-release-checklist)
 
 ---
 
@@ -25,6 +37,7 @@ This guide covers how to publish the Network Request & Response Copier extension
 1. **Google Developer Account** - Register at [Chrome Web Store Developer Dashboard](https://chrome.google.com/webstore/devconsole/)
 2. **One-time fee** - $5 USD registration fee
 3. **Extension package** - ZIP file of the extension (created automatically by CI or manually)
+4. **Account limit** - Each developer account can publish up to 20 items (remove unused items if you hit the limit)
 
 ---
 
@@ -56,12 +69,15 @@ network-request-response-copier.zip
     └── icon128.png
 ```
 
-### Step 2: Create Store Listing
+### Step 2: Upload in Developer Dashboard
 
 1. Go to [Chrome Web Store Developer Dashboard](https://chrome.google.com/webstore/devconsole/)
-2. Click **"New Item"**
-3. Upload your ZIP file
-4. Fill in the listing details:
+2. Click **"New item"**
+3. Upload your ZIP file (must be under 2 GB)
+
+### Step 3: Complete Listing, Privacy, and Distribution
+
+Fill out the required tabs in the dashboard:
 
 | Field | Suggested Value |
 |-------|-----------------|
@@ -70,7 +86,22 @@ network-request-response-copier.zip
 | **Category** | Developer Tools |
 | **Language** | English |
 
-### Step 3: Add Store Assets
+**Single purpose description:**
+> Copy and format network request data from Chrome DevTools for debugging and development purposes.
+
+**Permissions justification:**
+- No additional permissions are required
+
+**Data usage disclosure:**
+- This extension does **not** collect any user data
+- This extension does **not** transmit data to external servers
+- All data processing happens locally in the browser
+
+**Distribution:**
+- Choose **Public** (for the Web Store) or **Unlisted** (for direct links)
+- Provide test instructions if any feature needs special setup
+
+### Step 4: Add Store Assets
 
 You'll need:
 
@@ -88,39 +119,28 @@ You'll need:
 3. OData batch parsing example showing parsed operations
 4. Filtering and sorting in action
 
-### Step 4: Privacy & Permissions
-
-Fill in the privacy practices:
-
-**Single purpose description:**
-> Copy and format network request data from Chrome DevTools for debugging and development purposes.
-
-**Permissions justification:**
-
-| Permission | Justification |
-|------------|---------------|
-| `clipboardWrite` | Required to copy request data to the user's clipboard |
-
-**Data usage disclosure:**
-- This extension does **not** collect any user data
-- This extension does **not** transmit data to external servers
-- All data processing happens locally in the browser
-
-**Host permissions:**
-- This extension does **not** require host permissions
-- It only accesses the DevTools Network API
-
 ### Step 5: Submit for Review
 
 1. Review all information for accuracy
 2. Click **"Submit for Review"**
 3. Wait for approval (typically 1-3 business days)
+4. If you choose **"Defer publish"**, you can publish later from the dashboard once review is complete
 
 **After Publishing:**
 
 - **Updates**: Upload new ZIP with incremented version in `manifest.json`
 - **Reviews**: Monitor and respond to user feedback
 - **Analytics**: Track installs and usage in the dashboard
+
+### Updating an Existing Item
+
+1. Increment `manifest.json` version
+2. In the Developer Dashboard, open your item
+3. Go to the **Package** tab and click **"Upload new package"**
+4. Submit for review and publish after approval
+
+**Verified uploads (optional):**
+- If you opt in to Verified CRX uploads, future updates must be signed with your private key and uploaded as a CRX (keep the private key secure)
 
 ---
 
@@ -131,6 +151,10 @@ The repository includes a GitHub Actions workflow (`.github/workflows/release.ym
 ### Setting Up Chrome Web Store API
 
 To enable automatic publishing to Chrome Web Store, you need API credentials:
+
+**API prerequisites:**
+- 2-step verification must be enabled on the Google account
+- The Store Listing and Privacy tabs must be completed before publishing via API
 
 1. **Create a Google Cloud Project**
    - Go to [Google Cloud Console](https://console.cloud.google.com/)
@@ -198,6 +222,7 @@ Follow these guidelines to ensure your extension gets approved:
 
 ### Manifest Requirements
 
+- [x] Review Chrome Web Store policies and best practices
 - [x] Use Manifest V3 (required for new extensions)
 - [x] Request minimal permissions (only what's needed)
 - [x] Include all required icon sizes (16, 32, 48, 128)
@@ -207,7 +232,7 @@ Follow these guidelines to ensure your extension gets approved:
 ### Code Quality
 
 - [x] No minified or obfuscated code
-- [x] No remote code execution (eval with external sources)
+- [x] No remote code execution or external code loading
 - [x] Escape user-generated content to prevent XSS
 - [x] Use Content Security Policy best practices
 - [x] No unused permissions
@@ -225,6 +250,7 @@ Follow these guidelines to ensure your extension gets approved:
 - [x] Accurate description of features
 - [x] Proper categorization (Developer Tools)
 - [x] Contact information for support
+- [x] Screenshots and descriptions match actual functionality
 
 ### Common Rejection Reasons
 
