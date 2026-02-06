@@ -109,7 +109,7 @@ jobs:
           sh(f"git commit -m \"chore: release version {new_version}\"")
           sh(f"git tag v{new_version}")
           
-          print(f\"Released v{new_version}\")
+          print(f"Released v{new_version}")
           PY
 
       - name: Push commit and tag
