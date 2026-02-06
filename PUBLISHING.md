@@ -181,20 +181,28 @@ Asset requirements for Edge listing include:
 
 ## Automated Publishing (GitHub Actions)
 
-The repo workflow `.github/workflows/release.yml` now supports:
+The repo uses a single workflow `.github/workflows/release.yml` that handles everything:
 
-- GitHub Release artifact creation (always on tag)
-- Chrome publish (when Chrome secrets exist)
-- Edge publish (when Edge secrets exist)
+- Version bumping from conventional commits (`feat:` -> minor, `fix:` -> patch)
+- `CHANGELOG.md` generation
+- Release commit and tag creation
+- GitHub Release artifact creation
+- Chrome Web Store publishing
+- Edge Add-ons publishing
 
 ### What the Workflow Does
 
-On tag `v*` (or manual dispatch):
+When manually triggered via **Actions > Release Browser Extension > Run workflow**:
 
-1. Builds `network-request-response-copier-<tag>.zip`
-2. Creates a GitHub Release and uploads the ZIP
-3. Publishes to Chrome Web Store if Chrome secrets are configured
-4. Publishes update to Edge Add-ons if Edge API secrets are configured
+1. Scans commits since last tag for `feat:` and `fix:` messages
+2. Bumps version in `manifest.json` (minor for feat, patch for fix)
+3. Updates `CHANGELOG.md` with a dated release section
+4. Commits `chore: release version X.X.X` and creates tag `vX.X.X`
+5. Pushes commit and tag to `main`
+6. Builds `network-request-response-copier-vX.X.X.zip`
+7. Creates a GitHub Release and uploads the ZIP
+8. Publishes to Chrome Web Store
+9. Publishes update to Edge Add-ons
 
 ### Chrome API Setup
 
@@ -239,19 +247,11 @@ Edge secrets:
 
 ### Triggering a Release
 
-Tag-based release:
+1. Push your changes to `main` using conventional commits (`feat:` / `fix:`)
+2. Go to **GitHub Actions** > **Release Browser Extension**
+3. Click **Run workflow**
 
-```bash
-# Ensure manifest version is already bumped first
-git tag v1.0.1
-git push origin v1.0.1
-```
-
-Manual release:
-
-1. Open GitHub Actions
-2. Run workflow **Release Browser Extension**
-3. Provide version input (example: `v1.0.1`)
+The workflow handles version bumping, changelog, tagging, and publishing automatically.
 
 ---
 
@@ -286,19 +286,19 @@ Manual release:
 2. Confirm API credentials belong to the same Partner Center publisher/account
 3. Check upload/publish operation status returned by API
 
-**Version mismatch**
+**No feat/fix commits found**
 
-The workflow warns when `manifest.json` version and git tag differ. Always bump `manifest.json` before tagging.
+The workflow will fail if there are no `feat:` or `fix:` commits since the last tag. Make sure your commit messages follow conventional commit format.
 
 ---
 
 ## Quick Release Checklist
 
-- [ ] Bump version in `network-request-response-copier/manifest.json`
-- [ ] Test extension in Chrome and Edge
-- [ ] Commit and push changes
-- [ ] Create and push release tag (`vX.Y.Z`)
+- [ ] Commit changes with `feat:` or `fix:` prefixed messages
+- [ ] Push to `main`
+- [ ] Test extension locally in Chrome and Edge
+- [ ] Run **Release Browser Extension** workflow manually in GitHub Actions
 - [ ] Verify GitHub Release artifact was created
-- [ ] Verify Chrome publish job (if Chrome secrets are configured)
-- [ ] Verify Edge publish job (if Edge secrets are configured)
-- [ ] Confirm store submission/review status in both dashboards
+- [ ] Verify Chrome publish step succeeded
+- [ ] Verify Edge publish step succeeded (if Edge secrets are configured)
+- [ ] Confirm store submission/review status in dashboards

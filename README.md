@@ -161,12 +161,12 @@ network-request-response-copier/
 
 ### Releasing Updates
 
-This repository uses GitHub Actions for automated releases:
+This repository uses a single GitHub Actions workflow for automated releases:
 
-1. Update version in `manifest.json`
-2. Commit and push changes
-3. Create a git tag: `git tag v1.1.0 && git push origin v1.1.0`
-4. The workflow automatically creates a GitHub Release and publishes to Chrome Web Store
+1. Commit your changes with conventional commit messages (`feat:` or `fix:`)
+2. Push to `main`
+3. Go to **Actions** > **Release Browser Extension** > **Run workflow**
+4. The workflow automatically bumps the version, updates `CHANGELOG.md`, creates a tag, GitHub Release, and publishes to Chrome Web Store
 
 See [PUBLISHING.md](PUBLISHING.md) for detailed publishing instructions.
 
