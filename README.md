@@ -166,7 +166,8 @@ This repository uses a single GitHub Actions workflow for automated releases:
 1. Commit your changes with conventional commit messages (`feat:` or `fix:`)
 2. Push to `main`
 3. Go to **Actions** > **Release Browser Extension** > **Run workflow**
-4. The workflow automatically bumps the version, updates `CHANGELOG.md`, creates a tag, GitHub Release, and publishes to Chrome Web Store
+4. The workflow automatically bumps the version, updates `CHANGELOG.md`, creates a tag, GitHub Release, and publishes to Chrome Web Store and Edge Add-ons
+5. If Chrome or Edge publishing fails, rerun the workflow -- it will retry the failed store(s) without creating a new version
 
 See [PUBLISHING.md](PUBLISHING.md) for detailed publishing instructions.
 

@@ -194,15 +194,28 @@ The repo uses a single workflow `.github/workflows/release.yml` that handles eve
 
 When manually triggered via **Actions > Release Browser Extension > Run workflow**:
 
-1. Scans commits since last tag for `feat:` and `fix:` messages
-2. Bumps version in `manifest.json` (minor for feat, patch for fix)
-3. Updates `CHANGELOG.md` with a dated release section
-4. Commits `chore: release version X.X.X` and creates tag `vX.X.X`
-5. Pushes commit and tag to `main`
-6. Builds `network-request-response-copier-vX.X.X.zip`
-7. Creates a GitHub Release and uploads the ZIP
-8. Publishes to Chrome Web Store
-9. Publishes update to Edge Add-ons
+**First run (new release):**
+
+1. Reads `release-state.json` -- if no pending release, creates a new one
+2. Scans commits since last tag for `feat:` and `fix:` messages
+3. Bumps version in `manifest.json` (minor for feat, patch for fix)
+4. Updates `CHANGELOG.md` with a dated release section
+5. Writes `release-state.json` with status `pending` (chrome: false, edge: false)
+6. Commits `chore: release version X.X.X` and creates tag `vX.X.X`
+7. Pushes commit and tag to `main`
+8. Creates GitHub Release with ZIP artifact
+9. Publishes to Chrome Web Store (marks chrome as succeeded on success)
+10. Publishes to Edge Add-ons (marks edge as succeeded on success)
+11. When both succeed, `release-state.json` status becomes `complete`
+
+**Rerun (after partial failure):**
+
+If Chrome or Edge publishing fails, rerunning the workflow will:
+- Detect the pending release in `release-state.json`
+- Reuse the same version and tag (no new version bump)
+- Skip stores that already succeeded
+- Retry only the failed store(s)
+- Mark the release complete once both succeed
 
 ### Chrome API Setup
 
@@ -252,6 +265,16 @@ Edge secrets:
 3. Click **Run workflow**
 
 The workflow handles version bumping, changelog, tagging, and publishing automatically.
+
+### Retrying a Failed Publish
+
+If Chrome or Edge publishing fails:
+
+1. Fix the issue (e.g., resolve pending review, fix secrets)
+2. Go to **GitHub Actions** > **Release Browser Extension**
+3. Click **Run workflow** again
+
+The workflow detects the pending release in `release-state.json` and retries only the failed store(s). No new version is created until both stores succeed.
 
 ---
 
