@@ -165,7 +165,7 @@ This repository uses GitHub Actions for automated releases:
 
 1. Update version in `manifest.json`
 2. Commit and push changes
-3. Create a git tag: `git tag v1.0.1 && git push origin v1.0.1`
+3. Create a git tag: `git tag v1.1.0 && git push origin v1.1.0`
 4. The workflow automatically creates a GitHub Release and publishes to Chrome Web Store
 
 See [PUBLISHING.md](PUBLISHING.md) for detailed publishing instructions.
@@ -214,7 +214,7 @@ MIT License - Feel free to modify and use as needed.
 
 ## Changelog
 
-### Unreleased
+### v1.1.0
 
 - Added multi-selection for request rows (`Ctrl/Cmd + Click`)
 - Added range selection (`Shift + Click`) and range add (`Ctrl/Cmd + Shift + Click`)

@@ -1,61 +1,67 @@
-# Publishing Guide for Chrome Web Store
+# Publishing Guide (Chrome Web Store + Microsoft Edge Add-ons)
 
-This guide covers how to publish the Network Request & Response Copier extension to the Chrome Web Store, both manually and via automated CI/CD.
+This guide covers publishing the Network Request & Response Copier extension to:
+
+- Chrome Web Store
+- Microsoft Edge Add-ons
+
+It includes both manual submission steps and automated GitHub Actions publishing.
 
 ## Table of Contents
 
-- [Publishing Guide for Chrome Web Store](#publishing-guide-for-chrome-web-store)
+- [Publishing Guide (Chrome Web Store + Microsoft Edge Add-ons)](#publishing-guide-chrome-web-store--microsoft-edge-add-ons)
   - [Table of Contents](#table-of-contents)
-  - [Prerequisites](#prerequisites)
-  - [Manual Publishing](#manual-publishing)
-    - [Step 1: Prepare the Package](#step-1-prepare-the-package)
-    - [Step 2: Upload in Developer Dashboard](#step-2-upload-in-developer-dashboard)
-    - [Step 3: Complete Listing, Privacy, and Distribution](#step-3-complete-listing-privacy-and-distribution)
-    - [Step 4: Add Store Assets](#step-4-add-store-assets)
-    - [Step 5: Submit for Review](#step-5-submit-for-review)
-    - [Updating an Existing Item](#updating-an-existing-item)
+  - [Common Prerequisites](#common-prerequisites)
+  - [Package the Extension](#package-the-extension)
+  - [Chrome Web Store (Manual)](#chrome-web-store-manual)
+    - [Step 1: Upload the ZIP](#step-1-upload-the-zip)
+    - [Step 2: Complete Listing and Privacy](#step-2-complete-listing-and-privacy)
+    - [Step 3: Add Store Assets](#step-3-add-store-assets)
+    - [Step 4: Submit for Review](#step-4-submit-for-review)
+    - [Updating an Existing Chrome Listing](#updating-an-existing-chrome-listing)
+  - [Microsoft Edge Add-ons (Manual)](#microsoft-edge-add-ons-manual)
+    - [Step 1: Edge Compatibility Checklist](#step-1-edge-compatibility-checklist)
+    - [Step 2: Create the Add-on in Partner Center](#step-2-create-the-add-on-in-partner-center)
+    - [Step 3: Upload the ZIP Package](#step-3-upload-the-zip-package)
+    - [Step 4: Complete Store Listing, Privacy, and Availability](#step-4-complete-store-listing-privacy-and-availability)
+    - [Step 5: Submit for Certification](#step-5-submit-for-certification)
+    - [Updating an Existing Edge Listing](#updating-an-existing-edge-listing)
   - [Automated Publishing (GitHub Actions)](#automated-publishing-github-actions)
-    - [Setting Up Chrome Web Store API](#setting-up-chrome-web-store-api)
-    - [Configuring GitHub Secrets](#configuring-github-secrets)
-    - [Creating a Release](#creating-a-release)
-  - [Chrome Web Store Best Practices](#chrome-web-store-best-practices)
-    - [Manifest Requirements](#manifest-requirements)
-    - [Code Quality](#code-quality)
-    - [Privacy \& Security](#privacy--security)
-    - [Store Listing](#store-listing)
-    - [Common Rejection Reasons](#common-rejection-reasons)
+    - [What the Workflow Does](#what-the-workflow-does)
+    - [Chrome API Setup](#chrome-api-setup)
+    - [Edge API Setup](#edge-api-setup)
+    - [Required GitHub Secrets](#required-github-secrets)
+    - [Triggering a Release](#triggering-a-release)
+  - [Best Practices (Both Stores)](#best-practices-both-stores)
   - [Troubleshooting](#troubleshooting)
-    - [Extension Not Approved](#extension-not-approved)
-    - [API Upload Fails](#api-upload-fails)
-    - [Version Mismatch](#version-mismatch)
-  - [Quick Reference: Release Checklist](#quick-reference-release-checklist)
+  - [Quick Release Checklist](#quick-release-checklist)
 
 ---
 
-## Prerequisites
+## Common Prerequisites
 
-1. **Google Developer Account** - Register at [Chrome Web Store Developer Dashboard](https://chrome.google.com/webstore/devconsole/)
-2. **One-time fee** - $5 USD registration fee
-3. **Extension package** - ZIP file of the extension (created automatically by CI or manually)
-4. **Account limit** - Each developer account can publish up to 20 items (remove unused items if you hit the limit)
+1. **Extension source folder**: `network-request-response-copier/`
+2. **Manifest V3**: required for new submissions (already in use)
+3. **Developer accounts**:
+   - Chrome Web Store Developer Dashboard: [https://chromewebstore.google.com/](https://chromewebstore.google.com/)
+   - Microsoft Partner Center (Edge Add-ons): [https://partner.microsoft.com/dashboard/microsoftedge/overview](https://partner.microsoft.com/dashboard/microsoftedge/overview)
+4. **Privacy policy URL/text** (already available in this repo as `PRIVACY_POLICY.md`)
 
 ---
 
-## Manual Publishing
+## Package the Extension
 
-### Step 1: Prepare the Package
-
-Create a ZIP file containing all extension files:
+Create a clean ZIP containing only extension runtime files:
 
 ```bash
 cd network-request-response-copier
-zip -r ../network-copier-v1.0.0.zip . -x "*.DS_Store" -x "*.git*" -x "*.md"
+zip -r ../extension.zip . -x "*.DS_Store" -x "*.git*" -x "*.md"
 ```
 
-**Required files in ZIP:**
+Expected ZIP content:
 
 ```
-network-request-response-copier.zip
+extension.zip
 ├── manifest.json
 ├── devtools.html
 ├── devtools.js
@@ -69,238 +75,230 @@ network-request-response-copier.zip
     └── icon128.png
 ```
 
-### Step 2: Upload in Developer Dashboard
+---
 
-1. Go to [Chrome Web Store Developer Dashboard](https://chrome.google.com/webstore/devconsole/)
-2. Click **"New item"**
-3. Upload your ZIP file (must be under 2 GB)
+## Chrome Web Store (Manual)
 
-### Step 3: Complete Listing, Privacy, and Distribution
+### Step 1: Upload the ZIP
 
-Fill out the required tabs in the dashboard:
+1. Open Chrome Web Store Developer Dashboard
+2. Create a new item (or open existing item)
+3. Upload `extension.zip`
 
-| Field | Suggested Value |
-|-------|-----------------|
-| **Name** | Network Request & Response Copier |
-| **Summary** | DevTools panel to copy network requests with OData batch parsing and WebSocket support |
-| **Category** | Developer Tools |
-| **Language** | English |
+### Step 2: Complete Listing and Privacy
 
-**Single purpose description:**
-> Copy and format network request data from Chrome DevTools for debugging and development purposes.
+Suggested values:
 
-**Permissions justification:**
-- No additional permissions are required
+| Field | Value |
+|------|-------|
+| Name | Network Request & Response Copier |
+| Summary | DevTools panel to copy network requests with OData batch parsing and WebSocket support |
+| Category | Developer Tools |
+| Language | English |
 
-**Data usage disclosure:**
-- This extension does **not** collect any user data
-- This extension does **not** transmit data to external servers
-- All data processing happens locally in the browser
+Single-purpose summary:
+> Copy and format network request data from DevTools for debugging and development.
 
-**Distribution:**
-- Choose **Public** (for the Web Store) or **Unlisted** (for direct links)
-- Provide test instructions if any feature needs special setup
+Data disclosure:
+- No personal data collection
+- No external transmission
+- All processing is local in the browser
 
-### Step 4: Add Store Assets
+### Step 3: Add Store Assets
 
-You'll need:
+Recommended:
 
-| Asset | Size | Purpose |
-|-------|------|---------|
-| **Icon** | 128x128 px | Store listing icon (already included) |
-| **Screenshot 1** | 1280x800 or 640x400 | Main UI screenshot |
-| **Screenshot 2** | 1280x800 or 640x400 | Feature highlight |
-| **Promotional tile** | 440x280 (optional) | Featured display |
+- 128x128 icon (already included)
+- At least two screenshots that reflect real UI and flow
+- Optional promotional tile
 
-**Screenshot suggestions:**
+### Step 4: Submit for Review
 
-1. Extension panel showing requests list with various HTTP methods
-2. Split view with payload and response panels
-3. OData batch parsing example showing parsed operations
-4. Filtering and sorting in action
+1. Verify listing and policy disclosures
+2. Submit for review
+3. Publish immediately or defer publish
 
-### Step 5: Submit for Review
+### Updating an Existing Chrome Listing
 
-1. Review all information for accuracy
-2. Click **"Submit for Review"**
-3. Wait for approval (typically 1-3 business days)
-4. If you choose **"Defer publish"**, you can publish later from the dashboard once review is complete
+1. Increment `version` in `network-request-response-copier/manifest.json`
+2. Upload new ZIP package
+3. Submit the update
 
-**After Publishing:**
+---
 
-- **Updates**: Upload new ZIP with incremented version in `manifest.json`
-- **Reviews**: Monitor and respond to user feedback
-- **Analytics**: Track installs and usage in the dashboard
+## Microsoft Edge Add-ons (Manual)
 
-### Updating an Existing Item
+### Step 1: Edge Compatibility Checklist
 
-1. Increment `manifest.json` version
-2. In the Developer Dashboard, open your item
-3. Go to the **Package** tab and click **"Upload new package"**
-4. Submit for review and publish after approval
+Before the first Edge submission:
 
-**Verified uploads (optional):**
-- If you opt in to Verified CRX uploads, future updates must be signed with your private key and uploaded as a CRX (keep the private key secure)
+- Keep Manifest V3
+- Keep permissions minimal
+- Ensure no hardcoded Chrome Web Store update URL in `manifest.json`
+- Ensure listing title/description are not Chrome-branded for Edge listing text
+- Test in Edge via `edge://extensions` with **Load unpacked**
+
+### Step 2: Create the Add-on in Partner Center
+
+1. Go to Microsoft Partner Center Edge Add-ons dashboard
+2. Select **Create a new add-on**
+3. Enter base metadata (product name/category)
+
+### Step 3: Upload the ZIP Package
+
+1. Open your add-on entry
+2. Upload `extension.zip` as the package
+3. Wait for validation to complete
+
+### Step 4: Complete Store Listing, Privacy, and Availability
+
+Complete all required sections in Partner Center:
+
+- Properties (category, visibility, metadata)
+- Store listings (description/screenshots/locales)
+- Privacy and compliance declarations
+- Availability and markets
+
+Asset requirements for Edge listing include:
+
+- Store logo
+- Small promotional tile
+- At least one real product screenshot
+
+### Step 5: Submit for Certification
+
+1. Submit the draft submission
+2. Certification can take up to several business days (Microsoft states up to seven)
+3. Publish after approval (or auto-publish if selected)
+
+### Updating an Existing Edge Listing
+
+1. Increment `version` in `network-request-response-copier/manifest.json`
+2. Upload new ZIP package in the existing add-on submission
+3. Submit for certification again
 
 ---
 
 ## Automated Publishing (GitHub Actions)
 
-The repository includes a GitHub Actions workflow (`.github/workflows/release.yml`) that automates the release process.
+The repo workflow `.github/workflows/release.yml` now supports:
 
-### Setting Up Chrome Web Store API
+- GitHub Release artifact creation (always on tag)
+- Chrome publish (when Chrome secrets exist)
+- Edge publish (when Edge secrets exist)
 
-To enable automatic publishing to Chrome Web Store, you need API credentials:
+### What the Workflow Does
 
-**API prerequisites:**
-- 2-step verification must be enabled on the Google account
-- The Store Listing and Privacy tabs must be completed before publishing via API
+On tag `v*` (or manual dispatch):
 
-1. **Create a Google Cloud Project**
-   - Go to [Google Cloud Console](https://console.cloud.google.com/)
-   - Create a new project or select existing
-   - Enable the **Chrome Web Store API**
+1. Builds `network-request-response-copier-<tag>.zip`
+2. Creates a GitHub Release and uploads the ZIP
+3. Publishes to Chrome Web Store if Chrome secrets are configured
+4. Publishes update to Edge Add-ons if Edge API secrets are configured
 
-2. **Create OAuth 2.0 Credentials**
-   - Go to **APIs & Services > Credentials**
-   - Click **Create Credentials > OAuth client ID**
-   - Application type: **Desktop app**
-   - Note the **Client ID** and **Client Secret**
+### Chrome API Setup
 
-3. **Get Refresh Token**
-   
-   Use the `chrome-webstore-upload` CLI to generate a refresh token:
-   
-   ```bash
-   npm install -g chrome-webstore-upload-cli
-   chrome-webstore-upload auth
-   ```
-   
-   Follow the prompts and save the refresh token.
+1. Enable Chrome Web Store API in Google Cloud
+2. Create OAuth client credentials
+3. Generate refresh token with `chrome-webstore-upload-cli`
+4. Get your Chrome extension ID from the dashboard
 
-4. **Get Extension ID**
-   - After first manual upload, find the Extension ID in the Developer Dashboard
-   - It's a 32-character string like `abcdefghijklmnopqrstuvwxyzabcdef`
+### Edge API Setup
 
-### Configuring GitHub Secrets
+Use the Microsoft Edge Add-ons Publish API credentials (API key + client ID):
 
-Add these secrets to your repository (**Settings > Secrets and variables > Actions**):
+1. In Partner Center, open your add-on
+2. Open **Publish API** and create API credentials
+3. Save:
+   - `Client ID`
+   - `API Key`
+   - Existing `Product ID` for the add-on
 
-| Secret Name | Description |
-|------------|-------------|
-| `CHROME_EXTENSION_ID` | Your extension's 32-character ID |
-| `CHROME_CLIENT_ID` | OAuth 2.0 Client ID from Google Cloud |
-| `CHROME_CLIENT_SECRET` | OAuth 2.0 Client Secret |
-| `CHROME_REFRESH_TOKEN` | Refresh token from `chrome-webstore-upload auth` |
+Important API scope note:
+- Edge API publishing updates an existing Partner Center product
+- Initial add-on creation and first full store listing still require manual setup in Partner Center
 
-### Creating a Release
+### Required GitHub Secrets
 
-**Option 1: Tag-based release (recommended)**
+Chrome secrets:
+
+| Secret | Description |
+|--------|-------------|
+| `CHROME_EXTENSION_ID` | Chrome item ID |
+| `CHROME_CLIENT_ID` | Google OAuth Client ID |
+| `CHROME_CLIENT_SECRET` | Google OAuth Client Secret |
+| `CHROME_REFRESH_TOKEN` | Refresh token for publish API |
+
+Edge secrets:
+
+| Secret | Description |
+|--------|-------------|
+| `EDGE_PRODUCT_ID` | Partner Center product ID |
+| `EDGE_CLIENT_ID` | Edge Publish API client ID |
+| `EDGE_API_KEY` | Edge Publish API key |
+
+### Triggering a Release
+
+Tag-based release:
 
 ```bash
-# Update version in manifest.json first!
+# Ensure manifest version is already bumped first
 git tag v1.0.1
 git push origin v1.0.1
 ```
 
-The workflow will automatically:
-1. Create a ZIP of the extension
-2. Create a GitHub Release with the ZIP attached
-3. (If configured) Upload and publish to Chrome Web Store
+Manual release:
 
-**Option 2: Manual dispatch**
-
-1. Go to **Actions > Release Chrome Extension**
-2. Click **Run workflow**
-3. Enter the version (e.g., `v1.0.1`)
+1. Open GitHub Actions
+2. Run workflow **Release Browser Extension**
+3. Provide version input (example: `v1.0.1`)
 
 ---
 
-## Chrome Web Store Best Practices
+## Best Practices (Both Stores)
 
-Follow these guidelines to ensure your extension gets approved:
-
-### Manifest Requirements
-
-- [x] Review Chrome Web Store policies and best practices
-- [x] Use Manifest V3 (required for new extensions)
-- [x] Request minimal permissions (only what's needed)
-- [x] Include all required icon sizes (16, 32, 48, 128)
-- [x] Clear, accurate name and description
-- [x] Specify `minimum_chrome_version`
-
-### Code Quality
-
-- [x] No minified or obfuscated code
-- [x] No remote code execution or external code loading
-- [x] Escape user-generated content to prevent XSS
-- [x] Use Content Security Policy best practices
-- [x] No unused permissions
-
-### Privacy & Security
-
-- [x] Justify all permissions in the store listing
-- [x] Accurate privacy disclosures
-- [x] No data collection without disclosure
-- [x] Clear single-purpose description
-
-### Store Listing
-
-- [x] High-quality screenshots showing actual functionality
-- [x] Accurate description of features
-- [x] Proper categorization (Developer Tools)
-- [x] Contact information for support
-- [x] Screenshots and descriptions match actual functionality
-
-### Common Rejection Reasons
-
-1. **Vague description** - Be specific about what the extension does
-2. **Excessive permissions** - Only request what you need
-3. **Missing privacy policy** - Required if collecting any user data
-4. **Broken functionality** - Test thoroughly before submission
-5. **Misleading metadata** - Screenshots and description must match actual features
+- Keep permissions minimal and justified
+- Keep description accurate and specific
+- Avoid remote code loading and obfuscated code
+- Ensure screenshots match real, current UI
+- Keep privacy disclosures aligned with actual behavior
+- Test the extension in both Chrome and Edge before submission
 
 ---
 
 ## Troubleshooting
 
-### Extension Not Approved
+**Submission rejected**
 
-1. Check email for specific rejection reason
-2. Review the [Chrome Web Store Program Policies](https://developer.chrome.com/docs/webstore/program-policies/)
-3. Make required changes and resubmit
+1. Read rejection reason in store dashboard/email
+2. Fix metadata/policy/functionality issue
+3. Resubmit
 
-### API Upload Fails
+**Chrome publish API fails**
 
-1. Verify all secrets are correctly set
-2. Check that refresh token hasn't expired (regenerate if needed)
-3. Ensure extension ID matches the one in Developer Dashboard
-4. Verify Chrome Web Store API is enabled in Google Cloud
+1. Verify Chrome secrets
+2. Regenerate refresh token if expired
+3. Confirm extension ID matches dashboard item
 
-### Version Mismatch
+**Edge publish API fails**
 
-The workflow warns if `manifest.json` version doesn't match the git tag:
+1. Verify `EDGE_PRODUCT_ID`, `EDGE_CLIENT_ID`, `EDGE_API_KEY`
+2. Confirm API credentials belong to the same Partner Center publisher/account
+3. Check upload/publish operation status returned by API
 
-```bash
-# Fix by updating manifest.json before tagging
-# Edit manifest.json version to "1.0.1"
-git add manifest.json
-git commit -m "Bump version to 1.0.1"
-git tag v1.0.1
-git push origin main v1.0.1
-```
+**Version mismatch**
+
+The workflow warns when `manifest.json` version and git tag differ. Always bump `manifest.json` before tagging.
 
 ---
 
-## Quick Reference: Release Checklist
+## Quick Release Checklist
 
-Before each release:
-
-- [ ] Update version in `manifest.json`
-- [ ] Test extension functionality locally
-- [ ] Update README.md changelog if needed
-- [ ] Commit all changes
-- [ ] Create and push git tag
-- [ ] Verify GitHub Actions workflow completes
-- [ ] (Manual only) Download ZIP from release and upload to Chrome Web Store
-- [ ] Verify store listing after approval
+- [ ] Bump version in `network-request-response-copier/manifest.json`
+- [ ] Test extension in Chrome and Edge
+- [ ] Commit and push changes
+- [ ] Create and push release tag (`vX.Y.Z`)
+- [ ] Verify GitHub Release artifact was created
+- [ ] Verify Chrome publish job (if Chrome secrets are configured)
+- [ ] Verify Edge publish job (if Edge secrets are configured)
+- [ ] Confirm store submission/review status in both dashboards
