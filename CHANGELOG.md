@@ -5,6 +5,9 @@ The format is based on Keep a Changelog.
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-02-06
+### Added
+- feat: enhance multi-selection capabilities and update README
 ## [1.0.0] - 2026-02-05
 ### Added
 - Initial release
