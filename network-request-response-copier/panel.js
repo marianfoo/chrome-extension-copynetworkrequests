@@ -1,4 +1,4 @@
-// panel.js - Network Copier with resizable columns, batch preview, 3-state sorting
+// panel.js - Network Copier with multi-select, resizable columns, batch preview, 3-state sorting
 "use strict";
 
 // ============================================================
@@ -11,6 +11,7 @@ const showHttpCheckbox = document.getElementById("show-http");
 const showWsCheckbox = document.getElementById("show-ws");
 const prettyJsonCheckbox = document.getElementById("pretty-json");
 const clearLogButton = document.getElementById("clear-log");
+const clearSelectionButton = document.getElementById("clear-selection");
 const copySelectedButton = document.getElementById("copy-selected");
 const copyAllButton = document.getElementById("copy-all");
 const tableBody = document.querySelector("#request-table tbody");
@@ -37,7 +38,9 @@ const copyResponseBtn = document.getElementById("copy-response");
 // ============================================================
 
 let entries = [];
-let selectedIndex = null;
+let selectedIndices = new Set();
+let activeIndex = null;
+let selectionAnchorIndex = null;
 let sortColumn = null;
 let sortDirection = null; // null = default, 'asc', 'desc'
 const payloadCache = new WeakMap();
@@ -106,8 +109,10 @@ function updateSummary() {
   const filtered = getFilteredEntries();
   const httpCount = entries.filter(e => e.type === 'http').length;
   const wsCount = entries.filter(e => e.type === 'ws').length;
-  summaryEl.textContent = `${httpCount} HTTP, ${wsCount} WS • ${filtered.length} shown`;
-  copySelectedButton.disabled = selectedIndex == null;
+  const selectedCount = selectedIndices.size;
+  summaryEl.textContent = `${httpCount} HTTP, ${wsCount} WS • ${filtered.length} shown${selectedCount ? ` • ${selectedCount} selected` : ''}`;
+  clearSelectionButton.disabled = selectedCount === 0;
+  copySelectedButton.disabled = selectedCount === 0;
   copyAllButton.disabled = filtered.length === 0;
 }
 
@@ -323,6 +328,27 @@ function getFilteredEntries() {
   return filtered;
 }
 
+function getVisibleIndices() {
+  return getFilteredEntries().map(entry => entries.indexOf(entry));
+}
+
+function getRangeIndices(anchorIndex, targetIndex) {
+  const visibleIndices = getVisibleIndices();
+  const anchorPos = visibleIndices.indexOf(anchorIndex);
+  const targetPos = visibleIndices.indexOf(targetIndex);
+  
+  if (anchorPos === -1 || targetPos === -1) return [targetIndex];
+  
+  const start = Math.min(anchorPos, targetPos);
+  const end = Math.max(anchorPos, targetPos);
+  return visibleIndices.slice(start, end + 1);
+}
+
+function getFirstSelectedIndex() {
+  const selected = Array.from(selectedIndices).sort((a, b) => a - b);
+  return selected.length > 0 ? selected[0] : null;
+}
+
 // ============================================================
 // Sorting (3-state: asc → desc → default)
 // ============================================================
@@ -384,7 +410,7 @@ function renderTable() {
     const originalIndex = entries.indexOf(entry);
     const tr = document.createElement("tr");
     tr.dataset.index = originalIndex;
-    if (originalIndex === selectedIndex) tr.classList.add("selected");
+    if (selectedIndices.has(originalIndex)) tr.classList.add("selected");
     
     if (entry.type === 'http') {
       renderHttpRow(tr, entry.data, entry);
@@ -392,7 +418,7 @@ function renderTable() {
       renderWsRow(tr, entry.data);
     }
     
-    tr.onclick = () => selectEntry(originalIndex);
+    tr.onclick = (event) => selectEntry(originalIndex, event);
     tableBody.appendChild(tr);
   });
   
@@ -536,11 +562,29 @@ function setupColumnResizers() {
 // Selection & Detail View
 // ============================================================
 
-async function selectEntry(index) {
-  selectedIndex = index;
-  renderTable();
+function isToggleSelectEvent(event) {
+  return !!event && (event.metaKey || event.ctrlKey);
+}
+
+function clearDetailView() {
+  payloadContent.textContent = 'Select a request to view payload';
+  responseContent.textContent = 'Select a request to view response';
+}
+
+function resolveActiveIndex(referenceIndex = null) {
+  if (selectedIndices.size === 0) return null;
+  if (referenceIndex != null && selectedIndices.has(referenceIndex)) return referenceIndex;
   
-  const entry = entries[index];
+  const visibleSelected = getVisibleIndices().filter(i => selectedIndices.has(i));
+  if (visibleSelected.length > 0) return visibleSelected[0];
+  
+  return getFirstSelectedIndex();
+}
+
+async function renderActiveDetails() {
+  if (activeIndex == null) return;
+  
+  const entry = entries[activeIndex];
   if (!entry) return;
   
   copySelectedButton.disabled = false;
@@ -552,10 +596,52 @@ async function selectEntry(index) {
   }
 }
 
+async function selectEntry(index, event = null) {
+  const entry = entries[index];
+  if (!entry) return;
+  
+  const toggleSelection = isToggleSelectEvent(event);
+  const rangeSelection = !!(event && event.shiftKey);
+  
+  if (rangeSelection) {
+    const anchor = selectionAnchorIndex != null ? selectionAnchorIndex : (activeIndex != null ? activeIndex : index);
+    const rangeIndices = getRangeIndices(anchor, index);
+    
+    if (toggleSelection) {
+      rangeIndices.forEach(i => selectedIndices.add(i));
+    } else {
+      selectedIndices = new Set(rangeIndices);
+    }
+    
+    if (selectionAnchorIndex == null) selectionAnchorIndex = anchor;
+  } else if (toggleSelection) {
+    if (selectedIndices.has(index)) {
+      selectedIndices.delete(index);
+    } else {
+      selectedIndices.add(index);
+    }
+    selectionAnchorIndex = index;
+  } else {
+    selectedIndices = new Set([index]);
+    selectionAnchorIndex = index;
+  }
+  
+  activeIndex = selectedIndices.has(index) ? index : resolveActiveIndex(index);
+  
+  if (selectedIndices.size === 0 || activeIndex == null) {
+    deselectEntry();
+    return;
+  }
+  
+  renderTable();
+  await renderActiveDetails();
+}
+
 function deselectEntry() {
-  selectedIndex = null;
-  payloadContent.textContent = 'Select a request to view payload';
-  responseContent.textContent = 'Select a request to view response';
+  selectedIndices = new Set();
+  activeIndex = null;
+  selectionAnchorIndex = null;
+  clearDetailView();
   renderTable();
 }
 
@@ -759,14 +845,33 @@ async function formatEntryForCopy(entry) {
   return text;
 }
 
-async function copySelected() {
-  if (selectedIndex == null) return;
+function getSelectedEntriesForCopy() {
+  const visibleIndices = getVisibleIndices();
+  const visibleSelected = visibleIndices.filter(index => selectedIndices.has(index));
+  const hiddenSelected = Array.from(selectedIndices)
+    .filter(index => !visibleIndices.includes(index))
+    .sort((a, b) => a - b);
   
-  setStatus("Copying...", "ok");
-  const text = await formatEntryForCopy(entries[selectedIndex]);
+  return [...visibleSelected, ...hiddenSelected]
+    .map(index => entries[index])
+    .filter(Boolean);
+}
+
+async function copySelected() {
+  const selectedEntries = getSelectedEntriesForCopy();
+  if (selectedEntries.length === 0) return;
+  
+  const count = selectedEntries.length;
+  setStatus(count === 1 ? "Copying..." : `Copying ${count}...`, "ok");
+  
+  const parts = [];
+  for (const entry of selectedEntries) {
+    parts.push(await formatEntryForCopy(entry));
+  }
+  const text = parts.join('\n\n\n');
   
   if (await copyToClipboard(text)) {
-    setStatus("✓ Copied!", "ok");
+    setStatus(count === 1 ? "✓ Copied!" : `✓ ${count} copied!`, "ok");
   } else {
     setStatus("✗ Copy failed", "error");
     console.log("Copy text:", text);
@@ -864,18 +969,27 @@ filterInput.oninput = () => {
 methodFilter.onchange = renderTable;
 showHttpCheckbox.onchange = renderTable;
 showWsCheckbox.onchange = renderTable;
-prettyJsonCheckbox.onchange = () => { if (selectedIndex != null) selectEntry(selectedIndex); };
+prettyJsonCheckbox.onchange = () => {
+  if (activeIndex != null) renderActiveDetails();
+};
 
 clearLogButton.onclick = () => {
   entries = [];
-  selectedIndex = null;
+  selectedIndices = new Set();
+  activeIndex = null;
+  selectionAnchorIndex = null;
   sortColumn = null;
   sortDirection = null;
   updateSortIndicators();
-  payloadContent.textContent = 'Select a request to view payload';
-  responseContent.textContent = 'Select a request to view response';
+  clearDetailView();
   renderTable();
   setStatus("Cleared", "ok");
+};
+
+clearSelectionButton.onclick = () => {
+  if (selectedIndices.size === 0) return;
+  deselectEntry();
+  setStatus("Selection cleared", "ok");
 };
 
 copySelectedButton.onclick = copySelected;
@@ -905,7 +1019,7 @@ document.onkeydown = (e) => {
     deselectEntry();
   }
   
-  if ((e.ctrlKey || e.metaKey) && e.key === 'c' && selectedIndex != null) {
+  if ((e.ctrlKey || e.metaKey) && e.key === 'c' && selectedIndices.size > 0) {
     e.preventDefault();
     copySelected();
   }
@@ -916,14 +1030,17 @@ document.onkeydown = (e) => {
     const indices = filtered.map(entry => entries.indexOf(entry));
     if (indices.length === 0) return;
     
-    if (selectedIndex == null) {
+    if (activeIndex == null) {
       selectEntry(indices[0]);
     } else {
-      const pos = indices.indexOf(selectedIndex);
-      const newPos = e.key === 'ArrowDown' ? Math.min(pos + 1, indices.length - 1) : Math.max(pos - 1, 0);
-      selectEntry(indices[newPos]);
+      const pos = indices.indexOf(activeIndex);
+      const currentPos = pos === -1 ? 0 : pos;
+      const step = e.key === 'ArrowDown' ? 1 : -1;
+      const targetPos = Math.max(0, Math.min(currentPos + step, indices.length - 1));
+      selectEntry(indices[targetPos]);
     }
-    tableBody.querySelector('.selected')?.scrollIntoView({ block: 'nearest' });
+    const activeRow = tableBody.querySelector(`tr[data-index="${activeIndex}"]`) || tableBody.querySelector('.selected');
+    activeRow?.scrollIntoView({ block: 'nearest' });
   }
 };
 
@@ -943,10 +1060,28 @@ function addEntry(entry) {
     const removeCount = entries.length - MAX_ENTRIES;
     entries.splice(0, removeCount);
     
-    // Adjust selectedIndex if entries were removed
-    if (selectedIndex !== null) {
-      selectedIndex -= removeCount;
-      if (selectedIndex < 0) selectedIndex = null;
+    const shiftedSelection = new Set();
+    selectedIndices.forEach(index => {
+      const shifted = index - removeCount;
+      if (shifted >= 0) shiftedSelection.add(shifted);
+    });
+    selectedIndices = shiftedSelection;
+    
+    if (activeIndex != null) {
+      activeIndex -= removeCount;
+      if (activeIndex < 0) activeIndex = null;
+    }
+    
+    if (selectionAnchorIndex != null) {
+      selectionAnchorIndex -= removeCount;
+      if (selectionAnchorIndex < 0) selectionAnchorIndex = null;
+    }
+    
+    if (activeIndex == null) activeIndex = resolveActiveIndex();
+    if (selectedIndices.size === 0) {
+      activeIndex = null;
+      selectionAnchorIndex = null;
+      clearDetailView();
     }
   }
 }

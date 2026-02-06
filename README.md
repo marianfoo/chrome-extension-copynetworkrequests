@@ -38,10 +38,12 @@ A Chrome DevTools extension that lets you easily copy network request URLs, head
 - **Persistent layout** - Panel sizes and column widths are saved across sessions
 - **URL decoding** - Encoded URLs are displayed decoded for readability
 - **Sortable columns** - Click headers to sort by Method, Status, Name, URL, or Payload
+- **Multi-select rows** - Select multiple requests with Ctrl/Cmd-click and range selection
 
 ### Copy Options
 
-- **Copy Selected** - Copy the currently selected request
+- **Copy Selected** - Copy all currently selected requests (single or multi-select)
+- **Clear Selection** - Remove current selection with one click
 - **Copy All Filtered** - Copy all visible/filtered requests at once
 - **Copy Payload** - Copy just the request payload
 - **Copy Response** - Copy just the response body
@@ -62,6 +64,14 @@ A Chrome DevTools extension that lets you easily copy network request URLs, head
 - Requests are automatically captured when DevTools is open
 - Interact with the page to see requests appear in the list
 
+### Selecting Requests
+
+- **Click** - Select a single request
+- **Ctrl/Cmd + Click** - Add or remove individual requests from selection
+- **Shift + Click** - Select a contiguous range from the anchor row
+- **Ctrl/Cmd + Shift + Click** - Add a contiguous range to the existing selection
+- **Clear Selection button** - Clear all selected rows instantly
+
 ### Filtering
 
 | Filter | Description |
@@ -79,12 +89,15 @@ Click column headers to sort:
 - **2nd click** - Sort descending
 - **3rd click** - Reset to default order
 
-### Keyboard Shortcuts
+### Keyboard & Mouse Shortcuts
 
 | Key | Action |
 |-----|--------|
 | `↑` / `↓` | Navigate requests |
 | `Ctrl/Cmd + C` | Copy selected |
+| `Ctrl/Cmd + Click` | Toggle row selection |
+| `Shift + Click` | Select range |
+| `Ctrl/Cmd + Shift + Click` | Add range to selection |
 | `Escape` | Deselect |
 
 ## Output Format
@@ -200,6 +213,13 @@ See [Privacy Policy](PRIVACY_POLICY.md) for details.
 MIT License - Feel free to modify and use as needed.
 
 ## Changelog
+
+### Unreleased
+
+- Added multi-selection for request rows (`Ctrl/Cmd + Click`)
+- Added range selection (`Shift + Click`) and range add (`Ctrl/Cmd + Shift + Click`)
+- Updated copy behavior so **Copy Selected** copies all selected rows
+- Added a **Clear Selection** toolbar button to quickly deselect all rows
 
 ### v1.0.0
 
