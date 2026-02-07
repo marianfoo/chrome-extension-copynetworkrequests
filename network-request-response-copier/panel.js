@@ -128,6 +128,19 @@ function getHeaderValue(headers, name) {
   return h ? h.value : null;
 }
 
+/**
+ * Decode a base64-encoded response body to a UTF-8 string.
+ * Chrome's HAR API (harEntry.getContent) already decompresses gzip/br/deflate,
+ * but returns the result as base64 when the content contains non-ASCII bytes.
+ * We convert base64 → raw bytes → UTF-8 text via TextDecoder.
+ */
+function decodeBase64Body(base64) {
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < bytes.length; i++) bytes[i] = binary.charCodeAt(i);
+  return new TextDecoder('utf-8').decode(bytes);
+}
+
 function extractPayload(harEntry) {
   if (payloadCache.has(harEntry)) return payloadCache.get(harEntry);
   const req = harEntry.request;
@@ -161,9 +174,25 @@ function extractBatchOperations(harEntry) {
   return operations;
 }
 
+/**
+ * Get the response body from a HAR entry.
+ * harEntry.getContent(cb) calls cb(body, encoding) where encoding is "" for
+ * plain text or "base64" when Chrome base64-encoded the (already decompressed)
+ * response bytes. We decode base64 content back to a readable string.
+ */
 function getContent(harEntry) {
   return new Promise(resolve => {
-    try { harEntry.getContent(body => resolve(body || "")); }
+    try {
+      harEntry.getContent((body, encoding) => {
+        if (!body) { resolve(""); return; }
+        if (encoding === 'base64') {
+          try { resolve(decodeBase64Body(body)); }
+          catch { resolve(body); }
+          return;
+        }
+        resolve(body);
+      });
+    }
     catch { resolve(""); }
   });
 }
