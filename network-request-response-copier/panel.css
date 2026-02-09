@@ -377,6 +377,25 @@ tbody tr.selected { background: #264f78 !important; }
 #payload-content { color: #90caf9; }
 
 /* ============================================================
+   Syntax Highlighting
+   ============================================================ */
+
+/* JSON token colors */
+.hl-key { color: #9cdcfe; }
+.hl-string { color: #ce9178; }
+.hl-number { color: #b5cea8; }
+.hl-boolean { color: #569cd6; }
+.hl-null { color: #569cd6; font-style: italic; }
+
+/* XML token colors */
+.hl-xml-bracket { color: #808080; }
+.hl-xml-tag { color: #569cd6; }
+.hl-xml-attr { color: #9cdcfe; }
+.hl-xml-value { color: #ce9178; }
+.hl-xml-pi { color: #6a9955; }
+.hl-xml-comment { color: #6a9955; font-style: italic; }
+
+/* ============================================================
    Footer
    ============================================================ */
 
@@ -394,6 +413,14 @@ tbody tr.selected { background: #264f78 !important; }
 
 .status.ok { color: #81c784; }
 .status.error { color: #e57373; }
+
+.version-label {
+  font-size: 9px;
+  color: #555;
+  white-space: nowrap;
+  margin-left: auto;
+  padding-left: 10px;
+}
 
 /* ============================================================
    Scrollbar

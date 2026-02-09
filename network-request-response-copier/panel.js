@@ -199,8 +199,211 @@ function getContent(harEntry) {
 
 function formatJson(str) {
   if (!str || !prettyJsonCheckbox.checked) return str;
+  // Try JSON formatting first
   try { return JSON.stringify(JSON.parse(str), null, 2); }
-  catch { return str; }
+  catch {}
+  // Try XML formatting as fallback
+  const trimmed = str.trim();
+  if (trimmed.startsWith('<')) {
+    const formatted = formatXml(trimmed);
+    if (formatted) return formatted;
+  }
+  return str;
+}
+
+/**
+ * Pretty-print XML string with proper indentation.
+ * Splits tags onto separate lines and applies hierarchical indentation.
+ * Returns formatted XML string, or null if the input doesn't look like valid XML.
+ */
+function formatXml(str) {
+  if (!str) return null;
+
+  try {
+    let formatted = '';
+    let indent = 0;
+    const INDENT = '  ';
+
+    // Insert newlines between adjacent tags: >< → >\n<
+    const xml = str.replace(/>\s*</g, '>\n<');
+    const lines = xml.split('\n');
+
+    for (const rawLine of lines) {
+      const line = rawLine.trim();
+      if (!line) continue;
+
+      // Closing tag → decrease indent before writing
+      if (line.startsWith('</')) {
+        indent = Math.max(0, indent - 1);
+      }
+
+      formatted += INDENT.repeat(indent) + line + '\n';
+
+      // Opening tag that is NOT self-closing, NOT closing,
+      // NOT a processing instruction (<?…?>), NOT a comment/doctype (<!…>)
+      if (line.startsWith('<') &&
+          !line.startsWith('</') &&
+          !line.startsWith('<?') &&
+          !line.startsWith('<!') &&
+          !line.endsWith('/>')) {
+        // Handle inline content like <tag>text</tag> — no indent change
+        const tagName = line.match(/^<([^\s/>]+)/);
+        if (tagName) {
+          const closingTag = `</${tagName[1]}>`;
+          if (!line.includes(closingTag)) {
+            indent++;
+          }
+        }
+      }
+    }
+
+    return formatted.trimEnd() || null;
+  } catch {
+    return null;
+  }
+}
+
+// ============================================================
+// Syntax Highlighting
+// ============================================================
+
+/**
+ * Syntax-highlight a formatted JSON string.
+ * Returns an HTML string with span elements for different token types.
+ */
+function highlightJson(str) {
+  return str.replace(
+    /("(?:[^"\\]|\\.)*")(\s*:)?|\b(true|false)\b|\b(null)\b|(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)/g,
+    function(match, quoted, colon, bool, nul, num) {
+      if (quoted) {
+        const escaped = escapeHtml(quoted);
+        return colon
+          ? `<span class="hl-key">${escaped}</span>${colon}`
+          : `<span class="hl-string">${escaped}</span>`;
+      }
+      if (bool) return `<span class="hl-boolean">${bool}</span>`;
+      if (nul) return `<span class="hl-null">null</span>`;
+      if (num !== undefined) return `<span class="hl-number">${num}</span>`;
+      return match;
+    }
+  );
+}
+
+/**
+ * Syntax-highlight a formatted XML string.
+ * Walks through the string, identifies tags vs text content,
+ * and wraps each token type in a colored span.
+ */
+function highlightXml(str) {
+  let result = '';
+  let i = 0;
+  const len = str.length;
+
+  while (i < len) {
+    if (str[i] === '<') {
+      // Find end of tag, respecting quoted attribute values
+      let end = -1;
+      let inQuote = false, qc = '';
+      for (let j = i + 1; j < len; j++) {
+        if (inQuote) { if (str[j] === qc) inQuote = false; }
+        else if (str[j] === '"' || str[j] === "'") { inQuote = true; qc = str[j]; }
+        else if (str[j] === '>') { end = j; break; }
+      }
+      if (end === -1) { result += escapeHtml(str.substring(i)); break; }
+      result += colorizeTag(str.substring(i, end + 1));
+      i = end + 1;
+    } else {
+      // Text content between tags
+      const next = str.indexOf('<', i);
+      result += escapeHtml(next === -1 ? str.substring(i) : str.substring(i, next));
+      i = next === -1 ? len : next;
+    }
+  }
+
+  return result;
+}
+
+/**
+ * Colorize a single XML tag string (e.g. '<tag attr="val">').
+ * Returns HTML with spans for bracket, tag name, attributes, and values.
+ */
+function colorizeTag(tag) {
+  // Processing instruction: <?xml ...?>
+  if (tag.startsWith('<?')) return `<span class="hl-xml-pi">${escapeHtml(tag)}</span>`;
+  // Comment: <!--...-->
+  if (tag.startsWith('<!--')) return `<span class="hl-xml-comment">${escapeHtml(tag)}</span>`;
+  // DOCTYPE / CDATA
+  if (tag.startsWith('<!')) return `<span class="hl-xml-pi">${escapeHtml(tag)}</span>`;
+
+  // Regular opening/closing/self-closing tag
+  const m = tag.match(/^(<\/?)([^\s/>]+)([\s\S]*?)(\/?>)$/);
+  if (!m) return escapeHtml(tag);
+
+  let html = `<span class="hl-xml-bracket">${escapeHtml(m[1])}</span>`;
+  html += `<span class="hl-xml-tag">${escapeHtml(m[2])}</span>`;
+  if (m[3]) {
+    // Highlight attribute name="value" pairs; preserve surrounding whitespace
+    html += m[3].replace(/([\w:.-]+)\s*=\s*("[^"]*"|'[^']*')/g, (_, n, v) =>
+      `<span class="hl-xml-attr">${escapeHtml(n)}</span>=<span class="hl-xml-value">${escapeHtml(v)}</span>`
+    );
+  }
+  html += `<span class="hl-xml-bracket">${escapeHtml(m[4])}</span>`;
+  return html;
+}
+
+/**
+ * Format and syntax-highlight content for the detail panel.
+ * Tries JSON first, then XML, falls back to escaped plain text.
+ * Returns an HTML string safe for innerHTML.
+ */
+function highlightContent(str) {
+  if (!str) return '';
+  if (!prettyJsonCheckbox.checked) return escapeHtml(str);
+
+  // Try JSON
+  try {
+    const formatted = JSON.stringify(JSON.parse(str), null, 2);
+    return highlightJson(formatted);
+  } catch {}
+
+  // Try XML
+  const trimmed = str.trim();
+  if (trimmed.startsWith('<')) {
+    const formatted = formatXml(trimmed);
+    if (formatted) return highlightXml(formatted);
+  }
+
+  return escapeHtml(str);
+}
+
+/**
+ * Highlight pre-formatted text that may contain JSON blocks mixed with
+ * separator lines (used for batch payload/response display).
+ * Splits on ──── separator lines, highlights JSON blocks between them.
+ */
+function highlightPreformatted(str) {
+  if (!str || !prettyJsonCheckbox.checked) return escapeHtml(str || '');
+
+  // Split on separator lines (──── ... ────), keeping separators in result
+  const parts = str.split(/(────[^\n]*────)/);
+
+  return parts.map(part => {
+    // Separator line — escape as plain text
+    if (part.startsWith('────')) return escapeHtml(part);
+
+    const trimmed = part.trim();
+    if (!trimmed) return escapeHtml(part);
+
+    // Try highlighting as JSON
+    try {
+      JSON.parse(trimmed);
+      const leading = part.match(/^(\s*)/)[1];
+      const trailing = part.match(/(\s*)$/)[1];
+      return leading + highlightJson(trimmed) + trailing;
+    } catch {}
+
+    return escapeHtml(part);
+  }).join('');
 }
 
 function truncate(str, len) {
@@ -680,34 +883,33 @@ async function showHttpDetails(harEntry) {
   const method = harEntry.request.method;
   
   if (isBatchRequest(harEntry)) {
-    payloadContent.textContent = formatBatchPayload(payload);
+    payloadContent.innerHTML = highlightPreformatted(formatBatchPayload(payload));
   } else {
-    // For regular requests, show method + decoded URL, then body
+    // For regular requests, show method + decoded URL, then highlighted body
     const decodedUrl = urlDecode(url);
     const shortUrl = decodedUrl.replace(/^https?:\/\/[^/]+/, '');
-    let content = `──── ${method} ${shortUrl} ────\n`;
-    content += formatJson(payload) || '(no body)';
-    payloadContent.textContent = content;
+    const headerLine = `──── ${method} ${shortUrl} ────\n`;
+    payloadContent.innerHTML = escapeHtml(headerLine) + (payload ? highlightContent(payload) : escapeHtml('(no body)'));
   }
   
   responseContent.textContent = 'Loading...';
   const responseBody = await getContent(harEntry);
   
   if (isBatchRequest(harEntry)) {
-    responseContent.textContent = formatBatchResponse(responseBody);
+    responseContent.innerHTML = highlightPreformatted(formatBatchResponse(responseBody));
   } else {
-    responseContent.textContent = formatJson(responseBody) || '(empty)';
+    responseContent.innerHTML = responseBody ? highlightContent(responseBody) : escapeHtml('(empty)');
   }
 }
 
 function showWsDetails(wsData) {
-  payloadContent.textContent = wsData.direction === 'send' 
-    ? formatJson(wsData.data) || '(empty)'
-    : '(WebSocket received - see response)';
+  payloadContent.innerHTML = wsData.direction === 'send' 
+    ? (wsData.data ? highlightContent(wsData.data) : escapeHtml('(empty)'))
+    : escapeHtml('(WebSocket received - see response)');
   
-  responseContent.textContent = wsData.direction === 'receive'
-    ? formatJson(wsData.data) || '(empty)'
-    : '(WebSocket sent - see payload)';
+  responseContent.innerHTML = wsData.direction === 'receive'
+    ? (wsData.data ? highlightContent(wsData.data) : escapeHtml('(empty)'))
+    : escapeHtml('(WebSocket sent - see payload)');
 }
 
 // ============================================================
@@ -1177,4 +1379,14 @@ setupColumnResizers();
 setupPanelResizers();
 setupWebSocketCapture();
 renderTable();
+
+// Display extension version from manifest in footer
+try {
+  const manifest = chrome.runtime.getManifest();
+  const versionLabel = document.getElementById('version-label');
+  if (versionLabel && manifest.version) {
+    versionLabel.textContent = `v${manifest.version}`;
+  }
+} catch (e) {}
+
 console.log('[NetworkCopier] Ready');
