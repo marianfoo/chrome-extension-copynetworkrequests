@@ -896,7 +896,16 @@ async function showHttpDetails(harEntry) {
   const responseBody = await getContent(harEntry);
   
   if (isBatchRequest(harEntry)) {
-    responseContent.innerHTML = highlightPreformatted(formatBatchResponse(responseBody));
+    // Panel display: show only bodies without status headers (status is in the table)
+    const bodies = extractBatchResponseBodies(responseBody);
+    if (bodies.length === 0) {
+      responseContent.innerHTML = responseBody ? escapeHtml(responseBody) : escapeHtml('(empty)');
+    } else {
+      const separator = `\n<span style="color:#404040">${escapeHtml('─'.repeat(50))}</span>\n\n`;
+      responseContent.innerHTML = bodies
+        .map(b => b ? highlightContent(b) : escapeHtml('(no body)'))
+        .join(bodies.length > 1 ? separator : '');
+    }
   } else {
     responseContent.innerHTML = responseBody ? highlightContent(responseBody) : escapeHtml('(empty)');
   }
@@ -974,6 +983,36 @@ function formatBatchResponse(response) {
   }
   
   return lines.join('\n');
+}
+
+/**
+ * Extract raw body strings from a batch response (no status headers).
+ * Used for panel display where status is already visible in the table.
+ * Returns an array of raw body strings.
+ */
+function extractBatchResponseBodies(response) {
+  if (!response) return [];
+
+  const regex = /HTTP\/[\d.]+\s+(\d+)\s*([^\r\n]*)/gi;
+  let match;
+  const positions = [];
+
+  while ((match = regex.exec(response)) !== null) {
+    positions.push({ index: match.index, full: match[0] });
+  }
+
+  if (positions.length === 0) return [];
+
+  const bodies = [];
+  for (let i = 0; i < positions.length; i++) {
+    const pos = positions[i];
+    const endIdx = i < positions.length - 1 ? positions[i + 1].index : response.length;
+    const section = response.substring(pos.index + pos.full.length, endIdx);
+    const jsonMatch = section.match(/\{[\s\S]*?\}(?=\s*(?:--|$|\r?\n--))/);
+    bodies.push(jsonMatch ? jsonMatch[0] : '');
+  }
+
+  return bodies;
 }
 
 // ============================================================
