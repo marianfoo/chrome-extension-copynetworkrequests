@@ -1020,17 +1020,8 @@ function extractBatchResponseBodies(response) {
 // ============================================================
 
 async function copyToClipboard(text) {
-  // Method 1: Clipboard API (preferred when available)
-  try {
-    if (navigator.clipboard?.writeText) {
-      await navigator.clipboard.writeText(text);
-      return true;
-    }
-  } catch (e) {
-    console.log('Clipboard API failed:', e);
-  }
-  
-  // Method 2: Copy via inspected page using JSON encoding (DevTools-safe fallback)
+  // Method 1: Copy via inspected page (most reliable in DevTools panels,
+  // where navigator.clipboard is blocked by Permissions-Policy)
   try {
     const jsonText = JSON.stringify(text);
     const result = await new Promise((resolve) => {
@@ -1057,7 +1048,7 @@ async function copyToClipboard(text) {
     console.log('Inspected page copy failed:', e);
   }
   
-  // Method 3: Fallback using textarea in panel
+  // Method 2: Fallback using textarea in panel
   try {
     clipboardFallback.value = text;
     clipboardFallback.style.position = 'fixed';
@@ -1072,7 +1063,18 @@ async function copyToClipboard(text) {
     console.log('Panel copy failed:', e);
   }
   
-  // Method 3: Log to console as last resort
+  // Method 3: Clipboard API (usually blocked in DevTools panels by
+  // Permissions-Policy, but kept as a last attempt before giving up)
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+  } catch (e) {
+    // Silently ignore — Clipboard API is expected to fail in DevTools panels
+  }
+  
+  // Last resort: log to console
   console.log('=== COPY FAILED - Text logged below ===');
   console.log(text);
   return false;
