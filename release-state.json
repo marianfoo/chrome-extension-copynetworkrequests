@@ -1,6 +1,6 @@
 {
   "version": "1.2.0",
-  "status": "pending",
-  "chrome": false,
+  "status": "complete",
+  "chrome": true,
   "edge": true
 }
