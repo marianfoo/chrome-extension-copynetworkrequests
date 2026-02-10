@@ -219,10 +219,87 @@ If Chrome or Edge publishing fails, rerunning the workflow will:
 
 ### Chrome API Setup
 
-1. Enable Chrome Web Store API in Google Cloud
-2. Create OAuth client credentials
-3. Generate refresh token with `chrome-webstore-upload-cli`
-4. Get your Chrome extension ID from the dashboard
+#### Step 1: Create Google Cloud Project & OAuth Credentials
+
+1. Go to [Google Cloud Console > Credentials](https://console.developers.google.com/apis/credentials)
+2. Create a new project (e.g., `chrome-webstore-upload`)
+3. Go to [OAuth consent screen](https://console.cloud.google.com/auth/overview) > **Get started**
+4. Enter app name (e.g., `chrome-webstore-upload`) and your email
+5. Select **External** (required for personal Gmail accounts)
+6. Add your email as a **test user** under the consent screen settings
+7. Click **Create OAuth client** > **Desktop app** > name it `Chrome Webstore Upload`
+8. Save your **Client ID** and **Client Secret**
+
+#### Step 2: Enable Chrome Web Store API
+
+Go to [Chrome Web Store API](https://console.cloud.google.com/apis/library/chromewebstore.googleapis.com) and click **Enable**.
+
+#### Step 3: Generate Refresh Token
+
+```bash
+npx chrome-webstore-upload-keys
+```
+
+This will:
+1. Prompt for your Client ID and Client Secret
+2. Open a browser for Google OAuth consent
+3. Return your **Refresh Token**
+
+Example session:
+
+```
+┌  Follow the steps at this URL to generate the API keys...
+│
+◇  Client ID:
+│  667780883076-xxxxx.apps.googleusercontent.com
+│
+◇  Client secret:
+│  GOCSPX-xxxxx
+│
+◇  Open the authentication page in the default browser?
+│  Yes
+│
+◇  Approval code received from Google
+│
+◇  Done:
+```
+
+#### Step 4: Get Extension ID
+
+Find your extension ID in the [Chrome Web Store Developer Dashboard](https://chrome.google.com/webstore/devconsole/) -- it's a 32-character string like `mphiaidjajmllkfkjlkfgmfkccpnomgc`.
+
+#### Known Issue: Refresh Token Expiration
+
+Google OAuth apps in "Testing" mode have refresh tokens that **expire after 7 days**. This means the CI/CD workflow will fail after a week unless you regenerate the token.
+
+**Symptoms:** Chrome publish step fails with `401 Unauthorized` or `invalid_grant`.
+
+**Quick fix:** Regenerate the refresh token:
+
+```bash
+npx chrome-webstore-upload-keys
+```
+
+Then update the `CHROME_REFRESH_TOKEN` secret in GitHub (**Settings > Secrets > Actions**).
+
+#### Long-Term Solutions for Token Expiration
+
+1. **Publish the OAuth app (recommended)**
+   - Go to [OAuth consent screen](https://console.cloud.google.com/auth/overview)
+   - Click **Publish App** to move from "Testing" to "Production"
+   - This removes the 7-day token expiry
+   - Since the app is only used by you (no user-facing features), Google typically does not require verification for this type of internal tool
+   - After publishing, regenerate the refresh token once more
+
+2. **Use a Google Workspace account**
+   - If you have a Google Workspace (paid) account, set the OAuth app to **Internal**
+   - Internal apps don't have token expiry issues
+   - Not available for personal `@gmail.com` accounts
+
+3. **Use a service account with domain-wide delegation**
+   - More complex setup, requires Google Workspace
+   - Service account tokens don't expire the same way
+   - Overkill for a single-developer extension
 
 ### Edge API Setup
 
