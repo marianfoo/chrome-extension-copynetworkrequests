@@ -3,14 +3,19 @@
 A Chrome DevTools extension that lets you easily copy network request URLs, headers, payloads, and response bodies. Features OData $batch parsing, WebSocket support, and a split-panel UI.
 
 [![Chrome Web Store](https://img.shields.io/chrome-web-store/v/mphiaidjajmllkfkjlkfgmfkccpnomgc?label=Chrome%20Web%20Store)](https://chromewebstore.google.com/detail/network-request-response/mphiaidjajmllkfkjlkfgmfkccpnomgc)
+[![Edge Add-ons](https://img.shields.io/badge/Edge%20Add--ons-available-blue)](https://microsoftedge.microsoft.com/addons/detail/network-request-respons/mmfhobojdlgibnffjhkidhdcjfbfhgpo)
 [![Manifest V3](https://img.shields.io/badge/Manifest-V3-green)](https://developer.chrome.com/docs/extensions/mv3/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 ## Install
 
-**From Chrome Web Store (recommended):**
+**From Chrome Web Store:**
 
 [**Install from Chrome Web Store**](https://chromewebstore.google.com/detail/network-request-response/mphiaidjajmllkfkjlkfgmfkccpnomgc)
+
+**From Microsoft Edge Add-ons:**
+
+[**Install from Edge Add-ons**](https://microsoftedge.microsoft.com/addons/detail/network-request-respons/mmfhobojdlgibnffjhkidhdcjfbfhgpo)
 
 **From source (developer mode):**
 
