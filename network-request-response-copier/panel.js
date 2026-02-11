@@ -32,6 +32,8 @@ const payloadContent = document.getElementById("payload-content");
 const responseContent = document.getElementById("response-content");
 const copyPayloadBtn = document.getElementById("copy-payload");
 const copyResponseBtn = document.getElementById("copy-response");
+const payloadFormatSelect = document.getElementById("payload-format");
+const responseFormatSelect = document.getElementById("response-format");
 
 // ============================================================
 // State
@@ -386,6 +388,564 @@ function colorizeTag(tag) {
   }
   html += `<span class="hl-xml-bracket">${escapeHtml(m[4])}</span>`;
   return html;
+}
+
+// ============================================================
+// Code Formatting (Pretty-Print for JS / TS / CSS)
+// ============================================================
+
+/**
+ * Simple pretty-printer for minified JavaScript, TypeScript, or CSS.
+ * Adds line breaks after { } ; and applies indentation based on brace depth.
+ * Respects string literals and comments so they are not reformatted.
+ * @param {string} str - Minified source code
+ * @returns {string} Formatted source code with line breaks and indentation
+ */
+function formatCode(str) {
+  if (!str || !prettyJsonCheckbox.checked) return str;
+
+  // If already formatted (contains reasonable number of newlines), skip
+  const lineCount = (str.match(/\n/g) || []).length;
+  if (lineCount > str.length / 200) return str;
+
+  let result = '';
+  let indent = 0;
+  const INDENT = '  ';
+  let i = 0;
+  const len = str.length;
+
+  /** Append a trimmed newline + indent (avoids trailing whitespace on blank lines) */
+  function newline() {
+    result = result.replace(/[ \t]+$/, '');
+    result += '\n' + INDENT.repeat(indent);
+  }
+
+  while (i < len) {
+    const ch = str[i];
+    const next = i + 1 < len ? str[i + 1] : '';
+
+    // ── Single-line comment ──
+    if (ch === '/' && next === '/') {
+      let end = str.indexOf('\n', i);
+      if (end === -1) end = len;
+      result += str.substring(i, end);
+      i = end;
+      continue;
+    }
+
+    // ── Multi-line comment ──
+    if (ch === '/' && next === '*') {
+      let end = str.indexOf('*/', i + 2);
+      if (end === -1) end = len - 2;
+      end += 2;
+      result += str.substring(i, end);
+      i = end;
+      continue;
+    }
+
+    // ── String literals (", ', `) — pass through unchanged ──
+    if (ch === '"' || ch === "'" || ch === '`') {
+      const quote = ch;
+      let j = i + 1;
+      while (j < len) {
+        if (str[j] === '\\') { j += 2; continue; }
+        if (str[j] === quote) { j++; break; }
+        j++;
+      }
+      result += str.substring(i, j);
+      i = j;
+      continue;
+    }
+
+    // ── Opening brace → newline + increase indent ──
+    if (ch === '{') {
+      // Keep space before { if there isn't one already
+      if (result.length > 0 && !/\s$/.test(result)) result += ' ';
+      result += '{';
+      indent++;
+      newline();
+      i++;
+      // Skip any whitespace after {
+      while (i < len && (str[i] === ' ' || str[i] === '\t' || str[i] === '\n' || str[i] === '\r')) i++;
+      continue;
+    }
+
+    // ── Closing brace → decrease indent + newline ──
+    if (ch === '}') {
+      indent = Math.max(0, indent - 1);
+      newline();
+      result += '}';
+      i++;
+      // Skip any whitespace after }
+      while (i < len && (str[i] === ' ' || str[i] === '\t' || str[i] === '\n' || str[i] === '\r')) i++;
+      // Add newline after } unless followed by certain continuation chars
+      if (i < len && str[i] !== ';' && str[i] !== ',' && str[i] !== ')' && str[i] !== '}') {
+        newline();
+      }
+      continue;
+    }
+
+    // ── Semicolon → newline ──
+    if (ch === ';') {
+      result += ';';
+      i++;
+      // Skip any whitespace after ;
+      while (i < len && (str[i] === ' ' || str[i] === '\t' || str[i] === '\n' || str[i] === '\r')) i++;
+      // Don't newline if inside a for() header: detect by checking if we're inside parens
+      // Simple heuristic: if next non-space char is } or end, still newline
+      if (i < len && str[i] !== '}') {
+        newline();
+      }
+      continue;
+    }
+
+    // ── Collapse runs of whitespace to a single space ──
+    if (ch === ' ' || ch === '\t' || ch === '\n' || ch === '\r') {
+      if (result.length > 0 && !/\s$/.test(result)) result += ' ';
+      i++;
+      while (i < len && (str[i] === ' ' || str[i] === '\t' || str[i] === '\n' || str[i] === '\r')) i++;
+      continue;
+    }
+
+    // ── Everything else ──
+    result += ch;
+    i++;
+  }
+
+  return result.trim();
+}
+
+// ============================================================
+// CSS Syntax Highlighting
+// ============================================================
+
+/** CSS property names for context-aware highlighting */
+const CSS_KEYWORDS = new Set([
+  'important', 'inherit', 'initial', 'unset', 'revert', 'none', 'auto',
+  'normal', 'bold', 'italic', 'block', 'inline', 'flex', 'grid',
+  'absolute', 'relative', 'fixed', 'sticky', 'static',
+  'hidden', 'visible', 'scroll', 'solid', 'dashed', 'dotted',
+  'transparent', 'currentColor', 'center', 'left', 'right', 'top', 'bottom'
+]);
+
+/**
+ * Syntax-highlight a CSS string.
+ * Identifies comments, strings, at-rules, hex colors, numbers/units,
+ * properties (word before colon), and keyword values.
+ * @param {string} str - CSS source code (ideally already formatted)
+ * @returns {string} HTML string with syntax highlighting spans
+ */
+function highlightCss(str) {
+  if (!str) return '';
+
+  let result = '';
+  let i = 0;
+  const len = str.length;
+  // Track whether we're inside { } to distinguish selectors from properties
+  let insideBlock = false;
+
+  while (i < len) {
+    const ch = str[i];
+
+    // ── Multi-line comment ──
+    if (ch === '/' && i + 1 < len && str[i + 1] === '*') {
+      let end = str.indexOf('*/', i + 2);
+      if (end === -1) end = len - 2;
+      end += 2;
+      result += `<span class="hl-css-comment">${escapeHtml(str.substring(i, end))}</span>`;
+      i = end;
+      continue;
+    }
+
+    // ── String literals ──
+    if (ch === '"' || ch === "'") {
+      const quote = ch;
+      let j = i + 1;
+      while (j < len && str[j] !== quote) {
+        if (str[j] === '\\') j++;
+        j++;
+      }
+      if (j < len) j++;
+      result += `<span class="hl-css-string">${escapeHtml(str.substring(i, j))}</span>`;
+      i = j;
+      continue;
+    }
+
+    // ── Track block state ──
+    if (ch === '{') {
+      insideBlock = true;
+      result += escapeHtml(ch);
+      i++;
+      continue;
+    }
+    if (ch === '}') {
+      insideBlock = false;
+      result += escapeHtml(ch);
+      i++;
+      continue;
+    }
+
+    // ── @rules ──
+    if (ch === '@') {
+      let j = i + 1;
+      while (j < len && /[\w-]/.test(str[j])) j++;
+      result += `<span class="hl-css-atrule">${escapeHtml(str.substring(i, j))}</span>`;
+      i = j;
+      continue;
+    }
+
+    // ── Hex colors ──
+    if (ch === '#' && i + 1 < len && /[0-9a-fA-F]/.test(str[i + 1])) {
+      let j = i + 1;
+      while (j < len && /[0-9a-fA-F]/.test(str[j])) j++;
+      result += `<span class="hl-css-color">${escapeHtml(str.substring(i, j))}</span>`;
+      i = j;
+      continue;
+    }
+
+    // ── Numbers with optional units ──
+    if (/\d/.test(ch) || (ch === '.' && i + 1 < len && /\d/.test(str[i + 1]))) {
+      let j = i;
+      // Consume digits and decimal point
+      while (j < len && /[\d.]/.test(str[j])) j++;
+      // Consume CSS unit (px, em, rem, %, vh, vw, etc.)
+      while (j < len && /[a-zA-Z%]/.test(str[j])) j++;
+      result += `<span class="hl-css-number">${escapeHtml(str.substring(i, j))}</span>`;
+      i = j;
+      continue;
+    }
+
+    // ── Words: properties (inside block, before colon), selectors, or values ──
+    if (/[a-zA-Z_-]/.test(ch)) {
+      let j = i;
+      while (j < len && /[\w-]/.test(str[j])) j++;
+      const word = str.substring(i, j);
+
+      // Look ahead for colon to detect property names
+      let k = j;
+      while (k < len && (str[k] === ' ' || str[k] === '\t')) k++;
+
+      if (insideBlock && str[k] === ':') {
+        result += `<span class="hl-css-property">${escapeHtml(word)}</span>`;
+      } else if (!insideBlock) {
+        result += `<span class="hl-css-selector">${escapeHtml(word)}</span>`;
+      } else if (CSS_KEYWORDS.has(word)) {
+        result += `<span class="hl-css-keyword">${escapeHtml(word)}</span>`;
+      } else {
+        result += escapeHtml(word);
+      }
+      i = j;
+      continue;
+    }
+
+    // ── !important ──
+    if (ch === '!' && str.substring(i, i + 10) === '!important') {
+      result += `<span class="hl-css-keyword">${escapeHtml('!important')}</span>`;
+      i += 10;
+      continue;
+    }
+
+    // ── Everything else ──
+    result += escapeHtml(ch);
+    i++;
+  }
+
+  return result;
+}
+
+// ============================================================
+// Content-Type / URL Based Format Detection
+// ============================================================
+
+/**
+ * Detect the likely content format of a response based on its MIME type and URL.
+ * Used when the format dropdown is set to "Auto" to pick the right formatter.
+ * @param {object} harEntry - HAR entry with request/response data
+ * @returns {string} Detected format: "json", "javascript", "typescript", "css", "xml", or "auto"
+ */
+function detectResponseFormat(harEntry) {
+  const mimeType = (harEntry.response?.content?.mimeType || '').toLowerCase();
+  const url = (harEntry.request?.url || '').split('?')[0].toLowerCase();
+
+  if (mimeType.includes('json') || url.endsWith('.json')) return 'json';
+  if (mimeType.includes('javascript') || mimeType.includes('ecmascript')
+      || url.endsWith('.js') || url.endsWith('.mjs') || url.endsWith('.cjs')) return 'javascript';
+  if (mimeType.includes('typescript') || url.endsWith('.ts') || url.endsWith('.tsx')
+      || url.endsWith('.mts') || url.endsWith('.cts')) return 'typescript';
+  if (mimeType.includes('css') || url.endsWith('.css')) return 'css';
+  if (mimeType.includes('xml') || mimeType.includes('html')
+      || url.endsWith('.xml') || url.endsWith('.svg')) return 'xml';
+
+  return 'auto'; // Fall back to content-based detection
+}
+
+// ============================================================
+// JavaScript / TypeScript Syntax Highlighting
+// ============================================================
+
+/** Common JS keywords */
+const JS_KEYWORDS = new Set([
+  'break', 'case', 'catch', 'class', 'const', 'continue', 'debugger',
+  'default', 'delete', 'do', 'else', 'export', 'extends', 'finally',
+  'for', 'function', 'if', 'import', 'in', 'instanceof', 'let',
+  'new', 'of', 'return', 'super', 'switch', 'this', 'throw', 'try',
+  'typeof', 'var', 'void', 'while', 'with', 'yield',
+  'async', 'await', 'from', 'as', 'static', 'get', 'set'
+]);
+
+/** Additional TypeScript-specific keywords */
+const TS_KEYWORDS = new Set([
+  'interface', 'type', 'enum', 'namespace', 'module', 'declare',
+  'abstract', 'implements', 'readonly', 'private', 'public', 'protected',
+  'keyof', 'infer', 'is', 'asserts', 'override', 'satisfies', 'any',
+  'never', 'unknown', 'string', 'number', 'boolean', 'symbol', 'bigint',
+  'object', 'void'
+]);
+
+/** Built-in literal values */
+const JS_LITERALS = new Set([
+  'true', 'false', 'null', 'undefined', 'NaN', 'Infinity'
+]);
+
+/**
+ * Syntax-highlight a JavaScript or TypeScript string.
+ * Uses a character-by-character tokenizer to identify comments,
+ * strings, numbers, keywords, literals, and regular expressions.
+ * @param {string} str - Source code to highlight
+ * @param {boolean} isTypeScript - Include TypeScript-specific keywords
+ * @returns {string} HTML string with syntax highlighting spans
+ */
+function highlightJavaScript(str, isTypeScript) {
+  if (!str) return '';
+
+  let result = '';
+  let i = 0;
+  const len = str.length;
+
+  while (i < len) {
+    const ch = str[i];
+    const next = i + 1 < len ? str[i + 1] : '';
+
+    // ── Single-line comment ──
+    if (ch === '/' && next === '/') {
+      let end = str.indexOf('\n', i);
+      if (end === -1) end = len;
+      result += `<span class="hl-js-comment">${escapeHtml(str.substring(i, end))}</span>`;
+      i = end;
+      continue;
+    }
+
+    // ── Multi-line comment ──
+    if (ch === '/' && next === '*') {
+      let end = str.indexOf('*/', i + 2);
+      if (end === -1) end = len - 2;
+      end += 2;
+      result += `<span class="hl-js-comment">${escapeHtml(str.substring(i, end))}</span>`;
+      i = end;
+      continue;
+    }
+
+    // ── Template literal (backtick string) ──
+    if (ch === '`') {
+      let j = i + 1;
+      while (j < len && str[j] !== '`') {
+        if (str[j] === '\\') j++; // skip escaped character
+        j++;
+      }
+      if (j < len) j++; // include closing backtick
+      result += `<span class="hl-js-template">${escapeHtml(str.substring(i, j))}</span>`;
+      i = j;
+      continue;
+    }
+
+    // ── String literals (single or double quotes) ──
+    if (ch === '"' || ch === "'") {
+      const quote = ch;
+      let j = i + 1;
+      while (j < len && str[j] !== quote) {
+        if (str[j] === '\\') j++; // skip escaped character
+        j++;
+      }
+      if (j < len) j++; // include closing quote
+      result += `<span class="hl-js-string">${escapeHtml(str.substring(i, j))}</span>`;
+      i = j;
+      continue;
+    }
+
+    // ── Numbers (decimal, hex, octal, binary, BigInt) ──
+    if (/\d/.test(ch) || (ch === '.' && i + 1 < len && /\d/.test(str[i + 1]))) {
+      let j = i;
+      if (str[j] === '0' && j + 1 < len && (str[j + 1] === 'x' || str[j + 1] === 'X')) {
+        // Hexadecimal
+        j += 2;
+        while (j < len && /[0-9a-fA-F_]/.test(str[j])) j++;
+      } else if (str[j] === '0' && j + 1 < len && (str[j + 1] === 'o' || str[j + 1] === 'O')) {
+        // Octal
+        j += 2;
+        while (j < len && /[0-7_]/.test(str[j])) j++;
+      } else if (str[j] === '0' && j + 1 < len && (str[j + 1] === 'b' || str[j + 1] === 'B')) {
+        // Binary
+        j += 2;
+        while (j < len && /[01_]/.test(str[j])) j++;
+      } else {
+        // Decimal (integer or float)
+        while (j < len && /[\d_]/.test(str[j])) j++;
+        if (j < len && str[j] === '.') {
+          j++;
+          while (j < len && /[\d_]/.test(str[j])) j++;
+        }
+        // Exponent part
+        if (j < len && (str[j] === 'e' || str[j] === 'E')) {
+          j++;
+          if (j < len && (str[j] === '+' || str[j] === '-')) j++;
+          while (j < len && /[\d_]/.test(str[j])) j++;
+        }
+      }
+      // BigInt suffix
+      if (j < len && str[j] === 'n') j++;
+      result += `<span class="hl-js-number">${escapeHtml(str.substring(i, j))}</span>`;
+      i = j;
+      continue;
+    }
+
+    // ── Regex literal (basic heuristic: / after operator or start-of-line context) ──
+    if (ch === '/' && next !== '/' && next !== '*') {
+      // Simple heuristic: treat as regex if preceded by operator, punctuation, or line start
+      const prev = result.length > 0 ? str[i - 1] : '\n';
+      if (prev && /[=(!&|;:,?\[{~^%*/+\-\n]/.test(prev)) {
+        let j = i + 1;
+        let escaped = false;
+        let inCharClass = false;
+        while (j < len) {
+          if (escaped) { escaped = false; j++; continue; }
+          if (str[j] === '\\') { escaped = true; j++; continue; }
+          if (str[j] === '[') { inCharClass = true; j++; continue; }
+          if (str[j] === ']') { inCharClass = false; j++; continue; }
+          if (str[j] === '/' && !inCharClass) { j++; break; }
+          j++;
+        }
+        // Regex flags
+        while (j < len && /[gimsuy]/.test(str[j])) j++;
+        result += `<span class="hl-js-regex">${escapeHtml(str.substring(i, j))}</span>`;
+        i = j;
+        continue;
+      }
+    }
+
+    // ── Identifiers and keywords ──
+    if (/[a-zA-Z_$]/.test(ch)) {
+      let j = i;
+      while (j < len && /[\w$]/.test(str[j])) j++;
+      const word = str.substring(i, j);
+
+      if (JS_LITERALS.has(word)) {
+        result += `<span class="hl-js-literal">${escapeHtml(word)}</span>`;
+      } else if (JS_KEYWORDS.has(word)) {
+        result += `<span class="hl-js-keyword">${escapeHtml(word)}</span>`;
+      } else if (isTypeScript && TS_KEYWORDS.has(word)) {
+        result += `<span class="hl-js-keyword">${escapeHtml(word)}</span>`;
+      } else {
+        result += escapeHtml(word);
+      }
+      i = j;
+      continue;
+    }
+
+    // ── Everything else (operators, punctuation, whitespace) ──
+    result += escapeHtml(ch);
+    i++;
+  }
+
+  return result;
+}
+
+// ============================================================
+// Format-aware Highlighting
+// ============================================================
+
+/**
+ * Highlight content using the specified format language.
+ * When format is "auto", uses the original auto-detection logic.
+ * @param {string} str - Raw content string
+ * @param {string} format - One of: "auto", "json", "javascript", "typescript", "text"
+ * @returns {string} HTML string with syntax highlighting
+ */
+function highlightContentWithFormat(str, format) {
+  if (!str) return '';
+  if (!prettyJsonCheckbox.checked) return escapeHtml(str);
+
+  switch (format) {
+    case 'json':
+      try {
+        const formatted = JSON.stringify(JSON.parse(str), null, 2);
+        return highlightJson(formatted);
+      } catch {
+        // Not valid JSON — show as plain escaped text
+        return escapeHtml(str);
+      }
+
+    case 'javascript':
+      return highlightJavaScript(formatCode(str), false);
+
+    case 'typescript':
+      return highlightJavaScript(formatCode(str), true);
+
+    case 'css':
+      return highlightCss(formatCode(str));
+
+    case 'text':
+      return escapeHtml(str);
+
+    case 'auto':
+    default:
+      return highlightContent(str);
+  }
+}
+
+/**
+ * Highlight pre-formatted batch text using the specified format language.
+ * Splits on ──── separator lines and highlights blocks between them.
+ * @param {string} str - Pre-formatted batch text with separator lines
+ * @param {string} format - One of: "auto", "json", "javascript", "typescript", "text"
+ * @returns {string} HTML string with syntax highlighting
+ */
+function highlightPreformattedWithFormat(str, format) {
+  if (!str || !prettyJsonCheckbox.checked) return escapeHtml(str || '');
+  if (format === 'auto') return highlightPreformatted(str);
+  if (format === 'text') return escapeHtml(str);
+
+  // Split on separator lines (──── ... ────), keeping separators in result
+  const parts = str.split(/(────[^\n]*────)/);
+
+  return parts.map(part => {
+    // Separator line — escape as plain text
+    if (part.startsWith('────')) return escapeHtml(part);
+
+    const trimmed = part.trim();
+    if (!trimmed) return escapeHtml(part);
+
+    const leading = part.match(/^(\s*)/)[1];
+    const trailing = part.match(/(\s*)$/)[1];
+
+    switch (format) {
+      case 'json':
+        try {
+          JSON.parse(trimmed);
+          return leading + highlightJson(trimmed) + trailing;
+        } catch {
+          // Not valid JSON — show as plain escaped text
+          return escapeHtml(part);
+        }
+      case 'javascript':
+        return leading + highlightJavaScript(formatCode(trimmed), false) + trailing;
+      case 'typescript':
+        return leading + highlightJavaScript(formatCode(trimmed), true) + trailing;
+      case 'css':
+        return leading + highlightCss(formatCode(trimmed)) + trailing;
+      default:
+        return escapeHtml(part);
+    }
+  }).join('');
 }
 
 /**
@@ -1254,15 +1814,20 @@ async function showHttpDetails(harEntry) {
   const payload = extractPayload(harEntry);
   const url = harEntry.request.url;
   const method = harEntry.request.method;
+
+  // Auto-detect response format from Content-Type / URL when dropdown is "auto"
+  const detectedFormat = detectResponseFormat(harEntry);
+  const resolvedResponseFormat = responseFormatSelect.value === 'auto' ? detectedFormat : responseFormatSelect.value;
+  const resolvedPayloadFormat = payloadFormatSelect.value === 'auto' ? detectedFormat : payloadFormatSelect.value;
   
   if (isBatchRequest(harEntry)) {
-    payloadContent.innerHTML = highlightPreformatted(formatBatchPayload(payload));
+    payloadContent.innerHTML = highlightPreformattedWithFormat(formatBatchPayload(payload), resolvedPayloadFormat);
   } else {
     // For regular requests, show method + decoded URL, then highlighted body
     const decodedUrl = urlDecode(url);
     const shortUrl = decodedUrl.replace(/^https?:\/\/[^/]+/, '');
     const headerLine = `──── ${method} ${shortUrl} ────\n`;
-    payloadContent.innerHTML = escapeHtml(headerLine) + (payload ? highlightContent(payload) : escapeHtml('(no body)'));
+    payloadContent.innerHTML = escapeHtml(headerLine) + (payload ? highlightContentWithFormat(payload, resolvedPayloadFormat) : escapeHtml('(no body)'));
   }
   
   responseContent.textContent = 'Loading...';
@@ -1276,21 +1841,24 @@ async function showHttpDetails(harEntry) {
     } else {
       const separator = `\n<span style="color:#404040">${escapeHtml('─'.repeat(50))}</span>\n\n`;
       responseContent.innerHTML = bodies
-        .map(b => b ? highlightContent(b) : escapeHtml('(no body)'))
+        .map(b => b ? highlightContentWithFormat(b, resolvedResponseFormat) : escapeHtml('(no body)'))
         .join(bodies.length > 1 ? separator : '');
     }
   } else {
-    responseContent.innerHTML = responseBody ? highlightContent(responseBody) : escapeHtml('(empty)');
+    responseContent.innerHTML = responseBody ? highlightContentWithFormat(responseBody, resolvedResponseFormat) : escapeHtml('(empty)');
   }
 }
 
 function showWsDetails(wsData) {
+  const payloadFormat = payloadFormatSelect.value;
+  const responseFormat = responseFormatSelect.value;
+  
   payloadContent.innerHTML = wsData.direction === 'send' 
-    ? (wsData.data ? highlightContent(wsData.data) : escapeHtml('(empty)'))
+    ? (wsData.data ? highlightContentWithFormat(wsData.data, payloadFormat) : escapeHtml('(empty)'))
     : escapeHtml('(WebSocket received - see response)');
   
   responseContent.innerHTML = wsData.direction === 'receive'
-    ? (wsData.data ? highlightContent(wsData.data) : escapeHtml('(empty)'))
+    ? (wsData.data ? highlightContentWithFormat(wsData.data, responseFormat) : escapeHtml('(empty)'))
     : escapeHtml('(WebSocket sent - see payload)');
 }
 
@@ -1618,6 +2186,14 @@ prettyJsonCheckbox.onchange = () => {
   if (activeIndex != null) renderActiveDetails();
 };
 
+// Re-render detail panels when format selection changes
+payloadFormatSelect.onchange = () => {
+  if (activeIndex != null) renderActiveDetails();
+};
+responseFormatSelect.onchange = () => {
+  if (activeIndex != null) renderActiveDetails();
+};
+
 clearLogButton.onclick = () => {
   entries = [];
   selectedIndices = new Set();
@@ -1738,6 +2314,10 @@ function addEntry(entry) {
 }
 
 chrome.devtools.network.onRequestFinished.addListener((harEntry) => {
+  // Skip browser-extension requests by default (chrome-extension://, moz-extension://, etc.)
+  const reqUrl = harEntry.request?.url || '';
+  if (reqUrl.startsWith('chrome-extension://') || reqUrl.startsWith('moz-extension://')) return;
+
   addEntry({ type: 'http', data: harEntry });
   scheduleRender();
 });

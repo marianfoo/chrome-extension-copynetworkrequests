@@ -66,7 +66,17 @@
         <div class="detail-section" id="detail-payload">
           <div class="detail-header">
             <span class="detail-title">📤 Request Payload</span>
-            <button class="copy-btn" id="copy-payload">📋 Copy</button>
+            <div class="detail-header-actions">
+              <select class="format-select" id="payload-format" title="Syntax format">
+                <option value="auto">Auto</option>
+                <option value="json">JSON</option>
+                <option value="javascript">JavaScript</option>
+                <option value="typescript">TypeScript</option>
+                <option value="css">CSS</option>
+                <option value="text">Plain Text</option>
+              </select>
+              <button class="copy-btn" id="copy-payload">📋 Copy</button>
+            </div>
           </div>
           <pre class="detail-content" id="payload-content">Select a request to view payload</pre>
         </div>
@@ -76,7 +86,17 @@
         <div class="detail-section" id="detail-response">
           <div class="detail-header">
             <span class="detail-title">📥 Response Body</span>
-            <button class="copy-btn" id="copy-response">📋 Copy</button>
+            <div class="detail-header-actions">
+              <select class="format-select" id="response-format" title="Syntax format">
+                <option value="auto">Auto</option>
+                <option value="json">JSON</option>
+                <option value="javascript">JavaScript</option>
+                <option value="typescript">TypeScript</option>
+                <option value="css">CSS</option>
+                <option value="text">Plain Text</option>
+              </select>
+              <button class="copy-btn" id="copy-response">📋 Copy</button>
+            </div>
           </div>
           <pre class="detail-content" id="response-content">Select a request to view response</pre>
         </div>

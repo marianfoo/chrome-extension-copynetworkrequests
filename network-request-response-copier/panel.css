@@ -355,6 +355,26 @@ tbody tr.selected { background: #264f78 !important; }
   color: #b0b0b0;
 }
 
+.detail-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* Format selector dropdown in detail panels */
+.format-select {
+  padding: 2px 4px;
+  border-radius: 3px;
+  border: 1px solid #404040;
+  background: #353535;
+  color: #b0b0b0;
+  font-size: 10px;
+  cursor: pointer;
+}
+
+.format-select:hover { background: #454545; color: #e8eaed; }
+.format-select:focus { outline: none; border-color: #4fc3f7; }
+
 .copy-btn {
   padding: 2px 6px;
   font-size: 10px;
@@ -394,6 +414,28 @@ tbody tr.selected { background: #264f78 !important; }
 .hl-xml-value { color: #ce9178; }
 .hl-xml-pi { color: #6a9955; }
 .hl-xml-comment { color: #6a9955; font-style: italic; }
+
+/* JavaScript / TypeScript token colors */
+.hl-js-keyword { color: #569cd6; font-weight: 500; }
+.hl-js-string { color: #ce9178; }
+.hl-js-template { color: #ce9178; }
+.hl-js-comment { color: #6a9955; font-style: italic; }
+.hl-js-number { color: #b5cea8; }
+.hl-js-literal { color: #569cd6; }
+.hl-js-regex { color: #d16969; }
+.hl-js-operator { color: #d4d4d4; }
+.hl-js-punctuation { color: #d4d4d4; }
+
+/* CSS token colors */
+.hl-css-comment { color: #6a9955; font-style: italic; }
+.hl-css-string { color: #ce9178; }
+.hl-css-number { color: #b5cea8; }
+.hl-css-color { color: #ce9178; font-weight: 500; }
+.hl-css-atrule { color: #c586c0; }
+.hl-css-keyword { color: #569cd6; }
+.hl-css-property { color: #9cdcfe; }
+.hl-css-selector { color: #d7ba7d; }
+.hl-css-punctuation { color: #d4d4d4; }
 
 /* ============================================================
    Optional Columns (Resource Type, Size, Time)
