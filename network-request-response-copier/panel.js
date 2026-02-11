@@ -57,7 +57,22 @@ const RENDER_THROTTLE_MS = 100;
 // Column widths and order - load from localStorage or use defaults
 const STORAGE_KEY_COLUMNS = 'networkCopier_columnWidths';
 const STORAGE_KEY_PANELS = 'networkCopier_panelSizes';
-const STORAGE_KEY_COLUMN_ORDER = 'networkCopier_columnOrder'; 
+const STORAGE_KEY_COLUMN_ORDER = 'networkCopier_columnOrder';
+
+// All available column keys (defines the "natural" order for inserting new columns)
+const ALL_COLUMN_KEYS = ['icon', 'method', 'status', 'resourceType', 'name', 'url', 'size', 'time', 'payload'];
+const DEFAULT_COLUMN_ORDER = ['icon', 'method', 'status', 'name', 'url', 'payload'];
+const COLUMN_LABELS = {
+  icon: 'Type Icon',
+  method: 'Method',
+  status: 'Status',
+  name: 'Name',
+  url: 'URL',
+  payload: 'Payload Preview',
+  resourceType: 'Resource Type',
+  size: 'Size',
+  time: 'Time'
+};
 
 let columnWidths = loadColumnWidths();
 let panelSizes = loadPanelSizes();
@@ -94,10 +109,15 @@ function savePanelSizes() {
 function loadColumnOrder() {
   try {
     const saved = localStorage.getItem(STORAGE_KEY_COLUMN_ORDER);
-    if (saved) return JSON.parse(saved);
+    if (saved) {
+      // Filter out any unknown column keys (from future/past versions)
+      const parsed = JSON.parse(saved);
+      const valid = parsed.filter(k => ALL_COLUMN_KEYS.includes(k));
+      if (valid.length > 0) return valid;
+    }
   } catch (e) {}
-  // Default column order
-  return ['icon', 'method', 'status', 'name', 'url', 'payload'];
+  // Default column order (only the original 6 columns visible by default)
+  return [...DEFAULT_COLUMN_ORDER];
 }
 
 function saveColumnOrder() {
@@ -500,6 +520,47 @@ function getPayloadPreview(entry) {
 }
 
 // ============================================================
+// Size & Time Formatting
+// ============================================================
+
+/**
+ * Format a byte size for display (e.g. "1.2 kB", "3.4 MB").
+ * Shows "(cache)" when transferSize is 0 (served from disk/memory cache).
+ */
+function formatSize(contentSize, transferSize) {
+  if (transferSize === 0) return '(cache)';
+  const size = (transferSize != null && transferSize > 0) ? transferSize
+             : (contentSize != null && contentSize >= 0) ? contentSize : -1;
+  if (size < 0) return '';
+  if (size === 0) return '0 B';
+  if (size < 1024) return size + ' B';
+  if (size < 1024 * 1024) return (size / 1024).toFixed(1) + ' kB';
+  return (size / (1024 * 1024)).toFixed(1) + ' MB';
+}
+
+/**
+ * Format a duration in milliseconds for display (e.g. "43 ms", "1.20 s").
+ */
+function formatTime(timeMs) {
+  if (timeMs == null || timeMs < 0) return '';
+  if (timeMs < 1) return '< 1 ms';
+  if (timeMs < 1000) return Math.round(timeMs) + ' ms';
+  return (timeMs / 1000).toFixed(2) + ' s';
+}
+
+/**
+ * Get the numeric size value from an entry (for sorting).
+ */
+function getEntrySize(entry) {
+  if (entry.type === 'ws') return entry.data.data ? entry.data.data.length : 0;
+  const har = entry.data;
+  const transfer = har.response._transferSize;
+  if (transfer != null && transfer >= 0) return transfer;
+  const content = har.response.content ? har.response.content.size : -1;
+  return content >= 0 ? content : 0;
+}
+
+// ============================================================
 // Filtering
 // ============================================================
 
@@ -558,6 +619,18 @@ function getFilteredEntries() {
         case 'url':
           valA = getEntryUrl(a);
           valB = getEntryUrl(b);
+          break;
+        case 'resourceType':
+          valA = a.type === 'http' ? (a.data._resourceType || '') : 'websocket';
+          valB = b.type === 'http' ? (b.data._resourceType || '') : 'websocket';
+          break;
+        case 'size':
+          valA = getEntrySize(a);
+          valB = getEntrySize(b);
+          break;
+        case 'time':
+          valA = a.type === 'http' ? (a.data.time || 0) : 0;
+          valB = b.type === 'http' ? (b.data.time || 0) : 0;
           break;
         default:
           return 0;
@@ -702,13 +775,23 @@ function renderHttpRow(tr, harEntry, entry) {
   const escapedPayload = escapeHtml(payloadPreview);
   const escapedPayloadTitle = escapeHtml(payloadPreview.substring(0, 300));
 
+  // Extra column data: resource type, size, time
+  const resType = harEntry._resourceType || '';
+  const contentSize = harEntry.response.content ? harEntry.response.content.size : -1;
+  const transferSize = harEntry.response._transferSize;
+  const sizeDisplay = formatSize(contentSize, transferSize);
+  const timeDisplay = formatTime(harEntry.time);
+
   tr.innerHTML = buildRowHtml({
     icon: `<td class="type-icon">${isBatch ? '📦' : '🌐'}</td>`,
     method: `<td><span class="method-badge ${getMethodClass(harEntry.request.method)}">${escapedMethod}</span></td>`,
     status: `<td class="${getStatusClass(harEntry.response.status)}">${harEntry.response.status || '-'}</td>`,
     name: `<td class="col-name-data" title="${escapedName}">${escapedName}</td>`,
     url: `<td class="col-url-data" title="${escapedUrl}">${escapedShortUrl}</td>`,
-    payload: `<td class="col-payload-data payload-preview" title="${escapedPayloadTitle}">${escapedPayload}</td>`
+    payload: `<td class="col-payload-data payload-preview" title="${escapedPayloadTitle}">${escapedPayload}</td>`,
+    resourceType: `<td class="col-resource-type-data">${escapeHtml(resType)}</td>`,
+    size: `<td class="col-size-data">${escapeHtml(sizeDisplay)}</td>`,
+    time: `<td class="col-time-data">${escapeHtml(timeDisplay)}</td>`
   });
 }
 
@@ -723,31 +806,44 @@ function renderWsRow(tr, wsData) {
   const escapedData = escapeHtml(data);
   const escapedDataTitle = escapeHtml(data.substring(0, 300));
 
+  // Extra column data for WebSocket rows
+  const wsSize = wsData.data ? wsData.data.length : 0;
+  const wsSizeDisplay = wsSize > 0 ? formatSize(wsSize, null) : '';
+
   tr.innerHTML = buildRowHtml({
     icon: `<td class="type-icon">${dir}</td>`,
     method: `<td><span class="method-badge method-ws">WS</span></td>`,
     status: `<td class="${statusClass}">${statusText}</td>`,
     name: `<td class="col-name-data">WebSocket</td>`,
     url: `<td class="col-url-data" title="${escapedUrl}">${escapedUrl}</td>`,
-    payload: `<td class="col-payload-data payload-preview" title="${escapedDataTitle}">${escapedData}</td>`
+    payload: `<td class="col-payload-data payload-preview" title="${escapedDataTitle}">${escapedData}</td>`,
+    resourceType: `<td class="col-resource-type-data">websocket</td>`,
+    size: `<td class="col-size-data">${escapeHtml(wsSizeDisplay)}</td>`,
+    time: `<td class="col-time-data">-</td>`
   });
 }
 
 function applyColumnWidths() {
-  // Fixed column widths (icon=32, method=55, status=50)
-  const fixedWidth = 32 + 55 + 50;
-  
-  // Apply directly to th elements
-  const nameCol = tableHead.querySelector('.col-name');
-  const urlCol = tableHead.querySelector('.col-url');
-  const payloadCol = tableHead.querySelector('.col-payload');
-  
-  if (nameCol) nameCol.style.width = columnWidths.name + 'px';
-  if (urlCol) urlCol.style.width = columnWidths.url + 'px';
-  if (payloadCol) payloadCol.style.width = columnWidths.payload + 'px';
-  
+  // Fixed-width columns and their pixel sizes
+  const fixedWidths = { icon: 32, method: 55, status: 50, resourceType: 70, size: 75, time: 70 };
+
+  // Sum up fixed widths for visible columns only
+  let fixedTotal = 0;
+  columnOrder.forEach(col => { if (fixedWidths[col]) fixedTotal += fixedWidths[col]; });
+
+  // Resizable columns — apply inline width to <th> elements
+  const resizableCols = { name: '.col-name', url: '.col-url', payload: '.col-payload' };
+  let resizableTotal = 0;
+  for (const [key, selector] of Object.entries(resizableCols)) {
+    const th = tableHead.querySelector(selector);
+    if (th) {
+      th.style.width = columnWidths[key] + 'px';
+      resizableTotal += columnWidths[key];
+    }
+  }
+
   // Set total table width so resizing one column doesn't affect others
-  const totalWidth = fixedWidth + columnWidths.name + columnWidths.url + columnWidths.payload + 30;
+  const totalWidth = fixedTotal + resizableTotal + 30;
   requestTable.style.width = totalWidth + 'px';
 }
 
@@ -929,7 +1025,10 @@ function rebuildTableHeaders() {
     status: '<th class="col-status sortable" data-sort="status">Status<span class="sort-icon"></span></th>',
     name: '<th class="col-name sortable resizable" data-sort="name">Name<span class="sort-icon"></span><div class="col-resizer"></div></th>',
     url: '<th class="col-url sortable resizable" data-sort="url">URL<span class="sort-icon"></span><div class="col-resizer"></div></th>',
-    payload: '<th class="col-payload resizable">Payload Preview<div class="col-resizer"></div></th>'
+    payload: '<th class="col-payload resizable">Payload Preview<div class="col-resizer"></div></th>',
+    resourceType: '<th class="col-resource-type sortable" data-sort="resourceType">Resource<span class="sort-icon"></span></th>',
+    size: '<th class="col-size sortable" data-sort="size">Size<span class="sort-icon"></span></th>',
+    time: '<th class="col-time sortable" data-sort="time">Time<span class="sort-icon"></span></th>'
   };
 
   // Build headers in the stored order
@@ -949,6 +1048,120 @@ function rebuildTableHeaders() {
   setupColumnResizers();
   setupColumnDragAndDrop();
 }
+
+// ============================================================
+// Column Visibility Context Menu
+// ============================================================
+
+/**
+ * Right-click on the table header to toggle column visibility.
+ * Shows a custom context menu with checkboxes for each available column.
+ */
+function createColumnContextMenu(x, y) {
+  removeColumnContextMenu();
+
+  const menu = document.createElement('div');
+  menu.className = 'column-context-menu';
+  menu.id = 'column-context-menu';
+
+  const title = document.createElement('div');
+  title.className = 'context-menu-title';
+  title.textContent = 'Toggle Columns';
+  menu.appendChild(title);
+
+  ALL_COLUMN_KEYS.forEach(key => {
+    const item = document.createElement('label');
+    item.className = 'context-menu-item';
+
+    const checkbox = document.createElement('input');
+    checkbox.type = 'checkbox';
+    checkbox.checked = columnOrder.includes(key);
+    checkbox.dataset.column = key;
+
+    checkbox.addEventListener('change', () => {
+      toggleColumnVisibility(key, checkbox.checked);
+    });
+
+    const labelText = document.createTextNode(' ' + (COLUMN_LABELS[key] || key));
+    item.appendChild(checkbox);
+    item.appendChild(labelText);
+    menu.appendChild(item);
+  });
+
+  menu.style.left = x + 'px';
+  menu.style.top = y + 'px';
+  document.body.appendChild(menu);
+
+  // Adjust position if menu overflows the viewport
+  const rect = menu.getBoundingClientRect();
+  if (rect.right > window.innerWidth) {
+    menu.style.left = (window.innerWidth - rect.width - 5) + 'px';
+  }
+  if (rect.bottom > window.innerHeight) {
+    menu.style.top = (window.innerHeight - rect.height - 5) + 'px';
+  }
+
+  // Close menu on click outside (delayed to avoid immediate close)
+  setTimeout(() => {
+    document.addEventListener('click', _closeContextMenu);
+    document.addEventListener('contextmenu', _closeContextMenu);
+  }, 0);
+}
+
+function _closeContextMenu(e) {
+  const menu = document.getElementById('column-context-menu');
+  if (menu && !menu.contains(e.target)) {
+    removeColumnContextMenu();
+  }
+}
+
+function removeColumnContextMenu() {
+  const existing = document.getElementById('column-context-menu');
+  if (existing) existing.remove();
+  document.removeEventListener('click', _closeContextMenu);
+  document.removeEventListener('contextmenu', _closeContextMenu);
+}
+
+/**
+ * Add or remove a column from the visible column order.
+ * When adding, the column is inserted at its "natural" position based on ALL_COLUMN_KEYS.
+ */
+function toggleColumnVisibility(key, visible) {
+  if (visible && !columnOrder.includes(key)) {
+    // Insert at the natural position relative to existing visible columns
+    const idealIndex = ALL_COLUMN_KEYS.indexOf(key);
+    let insertAt = columnOrder.length;
+    for (let i = 0; i < columnOrder.length; i++) {
+      if (ALL_COLUMN_KEYS.indexOf(columnOrder[i]) > idealIndex) {
+        insertAt = i;
+        break;
+      }
+    }
+    columnOrder.splice(insertAt, 0, key);
+  } else if (!visible && columnOrder.includes(key)) {
+    // Don't allow removing all columns
+    if (columnOrder.length <= 1) return;
+    columnOrder = columnOrder.filter(k => k !== key);
+  }
+
+  saveColumnOrder();
+  rebuildTableHeaders();
+  renderTable();
+
+  // Update checkbox states in the still-open context menu
+  const menu = document.getElementById('column-context-menu');
+  if (menu) {
+    menu.querySelectorAll('input[type="checkbox"]').forEach(cb => {
+      cb.checked = columnOrder.includes(cb.dataset.column);
+    });
+  }
+}
+
+// Right-click on table header shows the column toggle menu
+tableHead.addEventListener('contextmenu', (e) => {
+  e.preventDefault();
+  createColumnContextMenu(e.clientX, e.clientY);
+});
 
 // ============================================================
 // Selection & Detail View
@@ -1448,6 +1661,12 @@ document.onkeydown = (e) => {
   
   if (e.key === 'Escape') {
     e.preventDefault();
+    // Close column context menu if open, otherwise deselect
+    const ctxMenu = document.getElementById('column-context-menu');
+    if (ctxMenu) {
+      removeColumnContextMenu();
+      return;
+    }
     deselectEntry();
   }
   

@@ -396,6 +396,61 @@ tbody tr.selected { background: #264f78 !important; }
 .hl-xml-comment { color: #6a9955; font-style: italic; }
 
 /* ============================================================
+   Optional Columns (Resource Type, Size, Time)
+   ============================================================ */
+
+.col-resource-type { width: 70px; min-width: 70px; max-width: 70px; }
+.col-size { width: 75px; min-width: 75px; max-width: 75px; text-align: right; }
+.col-time { width: 70px; min-width: 70px; max-width: 70px; text-align: right; }
+
+.col-resource-type-data { font-size: 10px; color: #b0b0b0; }
+.col-size-data { text-align: right; font-variant-numeric: tabular-nums; color: #b0b0b0; }
+.col-time-data { text-align: right; font-variant-numeric: tabular-nums; color: #b0b0b0; }
+
+/* ============================================================
+   Column Context Menu (right-click header to toggle columns)
+   ============================================================ */
+
+.column-context-menu {
+  position: fixed;
+  z-index: 1000;
+  background: #2d2d2d;
+  border: 1px solid #555;
+  border-radius: 6px;
+  padding: 6px 0;
+  min-width: 170px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+}
+
+.context-menu-title {
+  padding: 4px 12px 6px;
+  font-size: 10px;
+  color: #808080;
+  text-transform: uppercase;
+  font-weight: 600;
+  border-bottom: 1px solid #404040;
+  margin-bottom: 4px;
+}
+
+.context-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  cursor: pointer;
+  font-size: 12px;
+  color: #e8eaed;
+}
+
+.context-menu-item:hover {
+  background: #383838;
+}
+
+.context-menu-item input[type="checkbox"] {
+  accent-color: #4fc3f7;
+}
+
+/* ============================================================
    Column Drag & Drop
    ============================================================ */
 

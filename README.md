@@ -39,8 +39,10 @@ A Chrome DevTools extension that lets you easily copy network request URLs, head
 
 - **Split-panel layout** - Request list on left, details on right (like Chrome Network tab)
 - **Resizable columns** - Drag column headers to resize Name, URL, and Payload columns
+- **Drag & drop column reorder** - Drag column headers to rearrange column order
+- **Add/remove columns** - Right-click any column header to toggle optional columns (Resource Type, Size, Time)
 - **Resizable panels** - Adjust the split between list and details, payload and response
-- **Persistent layout** - Panel sizes and column widths are saved across sessions
+- **Persistent layout** - Panel sizes, column widths, column order, and column visibility are saved across sessions
 - **URL decoding** - Encoded URLs are displayed decoded for readability
 - **Sortable columns** - Click headers to sort by Method, Status, Name, URL, or Payload
 - **Multi-select rows** - Select multiple requests with Ctrl/Cmd-click and range selection
@@ -94,6 +96,30 @@ Click column headers to sort:
 - **2nd click** - Sort descending
 - **3rd click** - Reset to default order
 
+### Customizing Columns
+
+#### Reordering Columns
+
+Drag any column header and drop it at a new position to reorder columns.
+
+#### Adding/Removing Columns
+
+Right-click on any column header to open the column visibility menu. Toggle columns on or off:
+
+| Column | Description | Default |
+|--------|-------------|---------|
+| **Type Icon** | Batch (📦) or HTTP (🌐) indicator | Visible |
+| **Method** | HTTP method (GET, POST, etc.) | Visible |
+| **Status** | Response status code | Visible |
+| **Name** | Resource name from the URL | Visible |
+| **URL** | Request URL path | Visible |
+| **Payload Preview** | Request body or batch operations | Visible |
+| **Resource Type** | Resource type (xhr, script, font, etc.) | Hidden |
+| **Size** | Response size or "(cache)" for cached | Hidden |
+| **Time** | Request duration in ms | Hidden |
+
+Column order and visibility are persisted across sessions.
+
 ### Keyboard & Mouse Shortcuts
 
 | Key | Action |
@@ -103,7 +129,9 @@ Click column headers to sort:
 | `Ctrl/Cmd + Click` | Toggle row selection |
 | `Shift + Click` | Select range |
 | `Ctrl/Cmd + Shift + Click` | Add range to selection |
-| `Escape` | Deselect |
+| `Escape` | Deselect / Close column menu |
+| `Right-click` on column header | Toggle column visibility |
+| `Drag` column header | Reorder columns |
 
 ## Output Format
 
