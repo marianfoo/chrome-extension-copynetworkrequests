@@ -5,7 +5,7 @@ A Chrome DevTools extension that lets you easily copy network request URLs, head
 [![Chrome Web Store](https://img.shields.io/chrome-web-store/v/mphiaidjajmllkfkjlkfgmfkccpnomgc?label=Chrome%20Web%20Store)](https://chromewebstore.google.com/detail/network-request-response/mphiaidjajmllkfkjlkfgmfkccpnomgc)
 [![Edge Add-ons](https://img.shields.io/badge/Edge%20Add--ons-available-blue)](https://microsoftedge.microsoft.com/addons/detail/network-request-respons/mmfhobojdlgibnffjhkidhdcjfbfhgpo)
 [![Manifest V3](https://img.shields.io/badge/Manifest-V3-green)](https://developer.chrome.com/docs/extensions/mv3/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![License: Apache-2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 
 ## Install
 
@@ -244,7 +244,7 @@ See [Privacy Policy](PRIVACY_POLICY.md) for details.
 
 ## License
 
-MIT License - Feel free to modify and use as needed.
+Apache License 2.0 - see [LICENSE](LICENSE).
 
 ## Changelog
 
