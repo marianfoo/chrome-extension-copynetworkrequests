@@ -54,39 +54,56 @@ let renderPending = false;
 let renderTimeout = null;
 const RENDER_THROTTLE_MS = 100;
 
-// Column widths - load from localStorage or use defaults
+// Column widths and order - load from localStorage or use defaults
 const STORAGE_KEY_COLUMNS = 'networkCopier_columnWidths';
 const STORAGE_KEY_PANELS = 'networkCopier_panelSizes';
+const STORAGE_KEY_COLUMN_ORDER = 'networkCopier_columnOrder';
 
 let columnWidths = loadColumnWidths();
 let panelSizes = loadPanelSizes();
+let columnOrder = loadColumnOrder();
 
 function loadColumnWidths() {
   try {
     const saved = localStorage.getItem(STORAGE_KEY_COLUMNS);
     if (saved) return JSON.parse(saved);
-  } catch (e) {}
+  } catch (e) { }
   return { name: 120, url: 180, payload: 250 };
 }
 
 function saveColumnWidths() {
   try {
     localStorage.setItem(STORAGE_KEY_COLUMNS, JSON.stringify(columnWidths));
-  } catch (e) {}
+  } catch (e) { }
 }
 
 function loadPanelSizes() {
   try {
     const saved = localStorage.getItem(STORAGE_KEY_PANELS);
     if (saved) return JSON.parse(saved);
-  } catch (e) {}
+  } catch (e) { }
   return { leftWidth: 55, payloadHeight: 50 }; // percentages
 }
 
 function savePanelSizes() {
   try {
     localStorage.setItem(STORAGE_KEY_PANELS, JSON.stringify(panelSizes));
-  } catch (e) {}
+  } catch (e) { }
+}
+
+function loadColumnOrder() {
+  try {
+    const saved = localStorage.getItem(STORAGE_KEY_COLUMN_ORDER);
+    if (saved) return JSON.parse(saved);
+  } catch (e) { }
+  // Default column order
+  return ['icon', 'method', 'status', 'name', 'url', 'payload'];
+}
+
+function saveColumnOrder() {
+  try {
+    localStorage.setItem(STORAGE_KEY_COLUMN_ORDER, JSON.stringify(columnOrder));
+  } catch (e) { }
 }
 
 function applyPanelSizes() {
@@ -158,18 +175,18 @@ function extractPayload(harEntry) {
  */
 function extractBatchOperations(harEntry) {
   if (batchOpsCache.has(harEntry)) return batchOpsCache.get(harEntry);
-  
+
   const payload = extractPayload(harEntry);
   if (!payload) { batchOpsCache.set(harEntry, []); return []; }
-  
+
   const operations = [];
   const regex = /(GET|POST|PUT|PATCH|DELETE|MERGE)\s+([^\s]+)\s+HTTP/gi;
   let match;
-  
+
   while ((match = regex.exec(payload)) !== null) {
     operations.push({ method: match[1].toUpperCase(), url: match[2] });
   }
-  
+
   batchOpsCache.set(harEntry, operations);
   return operations;
 }
@@ -201,7 +218,7 @@ function formatJson(str) {
   if (!str || !prettyJsonCheckbox.checked) return str;
   // Try JSON formatting first
   try { return JSON.stringify(JSON.parse(str), null, 2); }
-  catch {}
+  catch { }
   // Try XML formatting as fallback
   const trimmed = str.trim();
   if (trimmed.startsWith('<')) {
@@ -242,10 +259,10 @@ function formatXml(str) {
       // Opening tag that is NOT self-closing, NOT closing,
       // NOT a processing instruction (<?…?>), NOT a comment/doctype (<!…>)
       if (line.startsWith('<') &&
-          !line.startsWith('</') &&
-          !line.startsWith('<?') &&
-          !line.startsWith('<!') &&
-          !line.endsWith('/>')) {
+        !line.startsWith('</') &&
+        !line.startsWith('<?') &&
+        !line.startsWith('<!') &&
+        !line.endsWith('/>')) {
         // Handle inline content like <tag>text</tag> — no indent change
         const tagName = line.match(/^<([^\s/>]+)/);
         if (tagName) {
@@ -274,7 +291,7 @@ function formatXml(str) {
 function highlightJson(str) {
   return str.replace(
     /("(?:[^"\\]|\\.)*")(\s*:)?|\b(true|false)\b|\b(null)\b|(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)/g,
-    function(match, quoted, colon, bool, nul, num) {
+    function (match, quoted, colon, bool, nul, num) {
       if (quoted) {
         const escaped = escapeHtml(quoted);
         return colon
@@ -364,7 +381,7 @@ function highlightContent(str) {
   try {
     const formatted = JSON.stringify(JSON.parse(str), null, 2);
     return highlightJson(formatted);
-  } catch {}
+  } catch { }
 
   // Try XML
   const trimmed = str.trim();
@@ -400,7 +417,7 @@ function highlightPreformatted(str) {
       const leading = part.match(/^(\s*)/)[1];
       const trailing = part.match(/(\s*)$/)[1];
       return leading + highlightJson(trimmed) + trailing;
-    } catch {}
+    } catch { }
 
     return escapeHtml(part);
   }).join('');
@@ -438,7 +455,7 @@ function urlDecode(str) {
 
 function getMethodClass(method) {
   const m = (method || '').toLowerCase();
-  return 'method-' + (['get','post','put','patch','delete','ws'].includes(m) ? m : 'other');
+  return 'method-' + (['get', 'post', 'put', 'patch', 'delete', 'ws'].includes(m) ? m : 'other');
 }
 
 function getStatusClass(status) {
@@ -467,9 +484,9 @@ function getEntryUrl(entry) {
  */
 function getPayloadPreview(entry) {
   if (entry.type === 'ws') return entry.data.data || '';
-  
+
   const harEntry = entry.data;
-  
+
   if (isBatchRequest(harEntry)) {
     const ops = extractBatchOperations(harEntry);
     if (ops.length > 0) {
@@ -477,7 +494,7 @@ function getPayloadPreview(entry) {
       return ops.map(op => `${op.method} ${urlDecode(op.url)}`).join(' | ');
     }
   }
-  
+
   // Regular request - show JSON payload
   return extractPayload(harEntry);
 }
@@ -489,20 +506,20 @@ function getPayloadPreview(entry) {
 function matchesFilter(entry) {
   if (entry.type === 'http' && !showHttpCheckbox.checked) return false;
   if (entry.type === 'ws' && !showWsCheckbox.checked) return false;
-  
+
   // Method filter (only applies to HTTP requests)
   const selectedMethod = methodFilter.value;
   if (selectedMethod && entry.type === 'http') {
     const entryMethod = entry.data.request.method.toUpperCase();
     if (entryMethod !== selectedMethod) return false;
   }
-  
+
   // WebSocket always shows if checkbox is on (not filtered by text or method)
   if (entry.type === 'ws') return true;
-  
+
   const filter = filterInput.value.trim().toLowerCase();
   if (!filter) return true;
-  
+
   const harEntry = entry.data;
   const payloadPreview = getPayloadPreview(entry);
   const searchText = [
@@ -513,18 +530,18 @@ function matchesFilter(entry) {
     payloadPreview,
     extractPayload(harEntry)
   ].join(' ').toLowerCase();
-  
+
   return searchText.includes(filter);
 }
 
 function getFilteredEntries() {
   let filtered = entries.filter(matchesFilter);
-  
+
   // Apply sorting only if sortColumn and sortDirection are set
   if (sortColumn && sortDirection) {
     filtered.sort((a, b) => {
       let valA, valB;
-      
+
       switch (sortColumn) {
         case 'method':
           valA = a.type === 'http' ? a.data.request.method : 'WS';
@@ -545,18 +562,18 @@ function getFilteredEntries() {
         default:
           return 0;
       }
-      
+
       if (typeof valA === 'string') {
         valA = valA.toLowerCase();
         valB = valB.toLowerCase();
       }
-      
+
       if (valA < valB) return sortDirection === 'asc' ? -1 : 1;
       if (valA > valB) return sortDirection === 'asc' ? 1 : -1;
       return 0;
     });
   }
-  
+
   return filtered;
 }
 
@@ -568,9 +585,9 @@ function getRangeIndices(anchorIndex, targetIndex) {
   const visibleIndices = getVisibleIndices();
   const anchorPos = visibleIndices.indexOf(anchorIndex);
   const targetPos = visibleIndices.indexOf(targetIndex);
-  
+
   if (anchorPos === -1 || targetPos === -1) return [targetIndex];
-  
+
   const start = Math.min(anchorPos, targetPos);
   const end = Math.max(anchorPos, targetPos);
   return visibleIndices.slice(start, end + 1);
@@ -598,7 +615,7 @@ function handleSort(column) {
     sortColumn = column;
     sortDirection = 'asc';
   }
-  
+
   updateSortIndicators();
   renderTable();
 }
@@ -622,7 +639,7 @@ function updateSortIndicators() {
  */
 function scheduleRender() {
   if (renderPending) return;
-  
+
   renderPending = true;
   clearTimeout(renderTimeout);
   renderTimeout = setTimeout(() => {
@@ -634,26 +651,26 @@ function scheduleRender() {
 function renderTable() {
   tableBody.innerHTML = "";
   const filtered = getFilteredEntries();
-  
+
   // Apply column widths
   applyColumnWidths();
-  
+
   filtered.forEach((entry) => {
     const originalIndex = entries.indexOf(entry);
     const tr = document.createElement("tr");
     tr.dataset.index = originalIndex;
     if (selectedIndices.has(originalIndex)) tr.classList.add("selected");
-    
+
     if (entry.type === 'http') {
       renderHttpRow(tr, entry.data, entry);
     } else {
       renderWsRow(tr, entry.data);
     }
-    
+
     tr.onclick = (event) => selectEntry(originalIndex, event);
     tableBody.appendChild(tr);
   });
-  
+
   emptyState.classList.toggle("visible", filtered.length === 0);
   copyAllButton.disabled = filtered.length === 0;
   updateSummary();
@@ -665,7 +682,7 @@ function renderHttpRow(tr, harEntry, entry) {
   const name = url.split('/').pop().split('?')[0] || 'request';
   const isBatch = isBatchRequest(harEntry);
   const payloadPreview = getPayloadPreview(entry);
-  
+
   // Escape all user-provided data to prevent XSS
   const escapedMethod = escapeHtml(harEntry.request.method);
   const escapedName = escapeHtml(name);
@@ -673,15 +690,26 @@ function renderHttpRow(tr, harEntry, entry) {
   const escapedShortUrl = escapeHtml(shortUrl);
   const escapedPayload = escapeHtml(payloadPreview);
   const escapedPayloadTitle = escapeHtml(payloadPreview.substring(0, 300));
-  
-  tr.innerHTML = `
-    <td class="type-icon">${isBatch ? '📦' : '🌐'}</td>
-    <td><span class="method-badge ${getMethodClass(harEntry.request.method)}">${escapedMethod}</span></td>
-    <td class="${getStatusClass(harEntry.response.status)}">${harEntry.response.status || '-'}</td>
-    <td class="col-name-data" title="${escapedName}">${escapedName}</td>
-    <td class="col-url-data" title="${escapedUrl}">${escapedShortUrl}</td>
-    <td class="col-payload-data payload-preview" title="${escapedPayloadTitle}">${escapedPayload}</td>
-  `;
+
+  // Column data mapping
+  const columnData = {
+    icon: `<td class="type-icon">${isBatch ? '📦' : '🌐'}</td>`,
+    method: `<td><span class="method-badge ${getMethodClass(harEntry.request.method)}">${escapedMethod}</span></td>`,
+    status: `<td class="${getStatusClass(harEntry.response.status)}">${harEntry.response.status || '-'}</td>`,
+    name: `<td class="col-name-data" title="${escapedName}">${escapedName}</td>`,
+    url: `<td class="col-url-data" title="${escapedUrl}">${escapedShortUrl}</td>`,
+    payload: `<td class="col-payload-data payload-preview" title="${escapedPayloadTitle}">${escapedPayload}</td>`
+  };
+
+  // Build row HTML in the correct column order
+  let rowHtml = '';
+  columnOrder.forEach(colKey => {
+    if (columnData[colKey]) {
+      rowHtml += columnData[colKey];
+    }
+  });
+
+  tr.innerHTML = rowHtml;
 }
 
 function renderWsRow(tr, wsData) {
@@ -689,35 +717,46 @@ function renderWsRow(tr, wsData) {
   const statusClass = wsData.direction === 'send' ? 'ws-send' : 'ws-recv';
   const statusText = wsData.direction === 'send' ? 'SEND' : 'RECV';
   const data = wsData.data || '';
-  
+
   // Escape all user-provided data to prevent XSS
   const escapedUrl = escapeHtml(wsData.url || '');
   const escapedData = escapeHtml(data);
   const escapedDataTitle = escapeHtml(data.substring(0, 300));
-  
-  tr.innerHTML = `
-    <td class="type-icon">${dir}</td>
-    <td><span class="method-badge method-ws">WS</span></td>
-    <td class="${statusClass}">${statusText}</td>
-    <td class="col-name-data">WebSocket</td>
-    <td class="col-url-data" title="${escapedUrl}">${escapedUrl}</td>
-    <td class="col-payload-data payload-preview" title="${escapedDataTitle}">${escapedData}</td>
-  `;
+
+  // Column data mapping
+  const columnData = {
+    icon: `<td class="type-icon">${dir}</td>`,
+    method: `<td><span class="method-badge method-ws">WS</span></td>`,
+    status: `<td class="${statusClass}">${statusText}</td>`,
+    name: `<td class="col-name-data">WebSocket</td>`,
+    url: `<td class="col-url-data" title="${escapedUrl}">${escapedUrl}</td>`,
+    payload: `<td class="col-payload-data payload-preview" title="${escapedDataTitle}">${escapedData}</td>`
+  };
+
+  // Build row HTML in the correct column order
+  let rowHtml = '';
+  columnOrder.forEach(colKey => {
+    if (columnData[colKey]) {
+      rowHtml += columnData[colKey];
+    }
+  });
+
+  tr.innerHTML = rowHtml;
 }
 
 function applyColumnWidths() {
   // Fixed column widths (icon=32, method=55, status=50)
   const fixedWidth = 32 + 55 + 50;
-  
+
   // Apply directly to th elements
   const nameCol = tableHead.querySelector('.col-name');
   const urlCol = tableHead.querySelector('.col-url');
   const payloadCol = tableHead.querySelector('.col-payload');
-  
+
   if (nameCol) nameCol.style.width = columnWidths.name + 'px';
   if (urlCol) urlCol.style.width = columnWidths.url + 'px';
   if (payloadCol) payloadCol.style.width = columnWidths.payload + 'px';
-  
+
   // Set total table width so resizing one column doesn't affect others
   const totalWidth = fixedWidth + columnWidths.name + columnWidths.url + columnWidths.payload + 30;
   requestTable.style.width = totalWidth + 'px';
@@ -741,53 +780,185 @@ function setupColumnResizers() {
   tableHead.addEventListener('mousedown', (e) => {
     const resizer = e.target.closest('.col-resizer');
     if (!resizer) return;
-    
+
     e.preventDefault();
     e.stopPropagation();
-    
+
     const th = resizer.parentElement;
     colResizeState.thElement = th;
     colResizeState.columnKey = th.classList.contains('col-name') ? 'name' :
-                               th.classList.contains('col-url') ? 'url' : 'payload';
-    
+      th.classList.contains('col-url') ? 'url' : 'payload';
+
     colResizeState.active = true;
     colResizeState.startX = e.clientX;
     // Get actual current width of the th element
     colResizeState.startWidth = th.offsetWidth;
-    
+
     resizer.classList.add('active');
     document.body.style.cursor = 'col-resize';
     document.body.style.userSelect = 'none';
   });
-  
+
   // Global mousemove for column resize
   document.addEventListener('mousemove', (e) => {
     if (!colResizeState.active || !colResizeState.thElement) return;
-    
+
     const diff = e.clientX - colResizeState.startX;
     const newWidth = Math.max(60, colResizeState.startWidth + diff);
-    
+
     // Update column width and recalculate table width
     columnWidths[colResizeState.columnKey] = newWidth;
     applyColumnWidths();
   });
-  
+
   // Global mouseup for column resize
   document.addEventListener('mouseup', () => {
     if (!colResizeState.active) return;
-    
+
     // Remove active class from resizer
     const activeResizer = tableHead.querySelector('.col-resizer.active');
     if (activeResizer) activeResizer.classList.remove('active');
-    
+
     colResizeState.active = false;
     colResizeState.thElement = null;
     document.body.style.cursor = '';
     document.body.style.userSelect = '';
-    
+
     // Save column widths to localStorage
     saveColumnWidths();
   });
+}
+
+// ============================================================
+// Column Drag & Drop Reordering
+// ============================================================
+
+const dragState = {
+  draggedColumn: null,
+  draggedIndex: -1,
+  dropTargetIndex: -1
+};
+
+function setupColumnDragAndDrop() {
+  const headers = tableHead.querySelectorAll('th');
+
+  headers.forEach((th, index) => {
+    // Make headers draggable
+    th.setAttribute('draggable', 'true');
+
+    // Drag start
+    th.addEventListener('dragstart', (e) => {
+      // Don't interfere with column resizing
+      if (e.target.classList.contains('col-resizer')) {
+        e.preventDefault();
+        return;
+      }
+
+      dragState.draggedColumn = th;
+      dragState.draggedIndex = Array.from(headers).indexOf(th);
+
+      th.classList.add('dragging');
+      e.dataTransfer.effectAllowed = 'move';
+      e.dataTransfer.setData('text/html', th.innerHTML);
+    });
+
+    // Drag over
+    th.addEventListener('dragover', (e) => {
+      if (!dragState.draggedColumn) return;
+
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+
+      const targetIndex = Array.from(headers).indexOf(th);
+      if (targetIndex !== dragState.draggedIndex) {
+        th.classList.add('drop-target');
+        dragState.dropTargetIndex = targetIndex;
+      }
+    });
+
+    // Drag leave
+    th.addEventListener('dragleave', () => {
+      th.classList.remove('drop-target');
+    });
+
+    // Drop
+    th.addEventListener('drop', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+
+      if (!dragState.draggedColumn) return;
+
+      const targetIndex = Array.from(headers).indexOf(th);
+
+      if (dragState.draggedIndex !== targetIndex) {
+        // Reorder columns
+        reorderColumns(dragState.draggedIndex, targetIndex);
+      }
+
+      th.classList.remove('drop-target');
+    });
+
+    // Drag end
+    th.addEventListener('dragend', () => {
+      headers.forEach(h => {
+        h.classList.remove('dragging', 'drop-target');
+      });
+      dragState.draggedColumn = null;
+      dragState.draggedIndex = -1;
+      dragState.dropTargetIndex = -1;
+    });
+  });
+}
+
+function reorderColumns(fromIndex, toIndex) {
+  // Update column order array
+  const movedColumn = columnOrder[fromIndex];
+  columnOrder.splice(fromIndex, 1);
+  columnOrder.splice(toIndex, 0, movedColumn);
+
+  // Save to localStorage
+  saveColumnOrder();
+
+  // Re-render the table to reflect new order
+  rebuildTableHeaders();
+  renderTable();
+}
+
+function rebuildTableHeaders() {
+  const headerRow = tableHead.querySelector('tr');
+
+  // Build HTML string for all headers in order
+  let headersHtml = '';
+  const columnDefs = {
+    icon: '<th class="col-icon">Type</th>',
+    method: '<th class="col-method sortable" data-sort="method">Method<span class="sort-icon"></span></th>',
+    status: '<th class="col-status sortable" data-sort="status">Status<span class="sort-icon"></span></th>',
+    name: '<th class="col-name sortable resizable" data-sort="name">Name<span class="sort-icon"></span><div class="col-resizer"></div></th>',
+    url: '<th class="col-url sortable resizable" data-sort="url">URL<span class="sort-icon"></span><div class="col-resizer"></div></th>',
+    payload: '<th class="col-payload resizable">Payload Preview<div class="col-resizer"></div></th>'
+  };
+
+  // Build headers in the stored order
+  columnOrder.forEach(colKey => {
+    if (columnDefs[colKey]) {
+      headersHtml += columnDefs[colKey];
+    }
+  });
+
+  // Set all headers at once
+  headerRow.innerHTML = headersHtml;
+
+  // Re-apply sort indicators if there's an active sort
+  updateSortIndicators();
+
+  // Re-setup event listeners
+  setupColumnResizers();
+  setupColumnDragAndDrop();
+}
+
+function setupSortHandlers() {
+  // Note: Sort handlers are already set up via tableHead.onclick in the Events section
+  // This function is kept for consistency but not strictly needed
 }
 
 // ============================================================
@@ -806,21 +977,21 @@ function clearDetailView() {
 function resolveActiveIndex(referenceIndex = null) {
   if (selectedIndices.size === 0) return null;
   if (referenceIndex != null && selectedIndices.has(referenceIndex)) return referenceIndex;
-  
+
   const visibleSelected = getVisibleIndices().filter(i => selectedIndices.has(i));
   if (visibleSelected.length > 0) return visibleSelected[0];
-  
+
   return getFirstSelectedIndex();
 }
 
 async function renderActiveDetails() {
   if (activeIndex == null) return;
-  
+
   const entry = entries[activeIndex];
   if (!entry) return;
-  
+
   copySelectedButton.disabled = false;
-  
+
   if (entry.type === 'http') {
     await showHttpDetails(entry.data);
   } else {
@@ -831,20 +1002,20 @@ async function renderActiveDetails() {
 async function selectEntry(index, event = null) {
   const entry = entries[index];
   if (!entry) return;
-  
+
   const toggleSelection = isToggleSelectEvent(event);
   const rangeSelection = !!(event && event.shiftKey);
-  
+
   if (rangeSelection) {
     const anchor = selectionAnchorIndex != null ? selectionAnchorIndex : (activeIndex != null ? activeIndex : index);
     const rangeIndices = getRangeIndices(anchor, index);
-    
+
     if (toggleSelection) {
       rangeIndices.forEach(i => selectedIndices.add(i));
     } else {
       selectedIndices = new Set(rangeIndices);
     }
-    
+
     if (selectionAnchorIndex == null) selectionAnchorIndex = anchor;
   } else if (toggleSelection) {
     if (selectedIndices.has(index)) {
@@ -857,14 +1028,14 @@ async function selectEntry(index, event = null) {
     selectedIndices = new Set([index]);
     selectionAnchorIndex = index;
   }
-  
+
   activeIndex = selectedIndices.has(index) ? index : resolveActiveIndex(index);
-  
+
   if (selectedIndices.size === 0 || activeIndex == null) {
     deselectEntry();
     return;
   }
-  
+
   renderTable();
   await renderActiveDetails();
 }
@@ -881,7 +1052,7 @@ async function showHttpDetails(harEntry) {
   const payload = extractPayload(harEntry);
   const url = harEntry.request.url;
   const method = harEntry.request.method;
-  
+
   if (isBatchRequest(harEntry)) {
     payloadContent.innerHTML = highlightPreformatted(formatBatchPayload(payload));
   } else {
@@ -891,10 +1062,10 @@ async function showHttpDetails(harEntry) {
     const headerLine = `──── ${method} ${shortUrl} ────\n`;
     payloadContent.innerHTML = escapeHtml(headerLine) + (payload ? highlightContent(payload) : escapeHtml('(no body)'));
   }
-  
+
   responseContent.textContent = 'Loading...';
   const responseBody = await getContent(harEntry);
-  
+
   if (isBatchRequest(harEntry)) {
     // Panel display: show only bodies without status headers (status is in the table)
     const bodies = extractBatchResponseBodies(responseBody);
@@ -912,10 +1083,10 @@ async function showHttpDetails(harEntry) {
 }
 
 function showWsDetails(wsData) {
-  payloadContent.innerHTML = wsData.direction === 'send' 
+  payloadContent.innerHTML = wsData.direction === 'send'
     ? (wsData.data ? highlightContent(wsData.data) : escapeHtml('(empty)'))
     : escapeHtml('(WebSocket received - see response)');
-  
+
   responseContent.innerHTML = wsData.direction === 'receive'
     ? (wsData.data ? highlightContent(wsData.data) : escapeHtml('(empty)'))
     : escapeHtml('(WebSocket sent - see payload)');
@@ -927,61 +1098,61 @@ function showWsDetails(wsData) {
 
 function formatBatchPayload(payload) {
   if (!payload) return '(empty)';
-  
+
   const lines = [];
   const regex = /(GET|POST|PUT|PATCH|DELETE|MERGE)\s+([^\s]+)\s+HTTP/gi;
   let match;
   const positions = [];
-  
+
   while ((match = regex.exec(payload)) !== null) {
     positions.push({ index: match.index, method: match[1], url: match[2], full: match[0] });
   }
-  
+
   if (positions.length === 0) return payload;
-  
+
   for (let i = 0; i < positions.length; i++) {
     const pos = positions[i];
     const endIdx = i < positions.length - 1 ? positions[i + 1].index : payload.length;
     const section = payload.substring(pos.index + pos.full.length, endIdx);
     const jsonMatch = section.match(/\{[\s\S]*\}/);
     const body = jsonMatch ? jsonMatch[0] : '';
-    
+
     // Decode URL for readability
     const decodedUrl = urlDecode(pos.url);
     lines.push(`──── ${pos.method} ${decodedUrl} ────`);
     lines.push(body ? formatJson(body) : '(no body)');
     lines.push('');
   }
-  
+
   return lines.join('\n');
 }
 
 function formatBatchResponse(response) {
   if (!response) return '(empty)';
-  
+
   const lines = [];
   const regex = /HTTP\/[\d.]+\s+(\d+)\s*([^\r\n]*)/gi;
   let match;
   const positions = [];
-  
+
   while ((match = regex.exec(response)) !== null) {
     positions.push({ index: match.index, status: match[1], text: match[2], full: match[0] });
   }
-  
+
   if (positions.length === 0) return response;
-  
+
   for (let i = 0; i < positions.length; i++) {
     const pos = positions[i];
     const endIdx = i < positions.length - 1 ? positions[i + 1].index : response.length;
     const section = response.substring(pos.index + pos.full.length, endIdx);
     const jsonMatch = section.match(/\{[\s\S]*?\}(?=\s*(?:--|$|\r?\n--))/);
     const body = jsonMatch ? jsonMatch[0] : '';
-    
+
     lines.push(`──── Response ${pos.status} ${pos.text} ────`);
     lines.push(body ? formatJson(body) : '(no body)');
     lines.push('');
   }
-  
+
   return lines.join('\n');
 }
 
@@ -1047,7 +1218,7 @@ async function copyToClipboard(text) {
   } catch (e) {
     console.log('Inspected page copy failed:', e);
   }
-  
+
   // Method 2: Fallback using textarea in panel
   try {
     clipboardFallback.value = text;
@@ -1062,7 +1233,7 @@ async function copyToClipboard(text) {
   } catch (e) {
     console.log('Panel copy failed:', e);
   }
-  
+
   // Method 3: Clipboard API (usually blocked in DevTools panels by
   // Permissions-Policy, but kept as a last attempt before giving up)
   try {
@@ -1073,7 +1244,7 @@ async function copyToClipboard(text) {
   } catch (e) {
     // Silently ignore — Clipboard API is expected to fail in DevTools panels
   }
-  
+
   // Last resort: log to console
   console.log('=== COPY FAILED - Text logged below ===');
   console.log(text);
@@ -1082,26 +1253,26 @@ async function copyToClipboard(text) {
 
 async function formatEntryForCopy(entry) {
   let text = '';
-  
+
   if (entry.type === 'http') {
     const harEntry = entry.data;
     const payload = extractPayload(harEntry);
     const response = await getContent(harEntry);
-    
+
     text = `═══════════════════════════════════════════════════════════════\n`;
     text += `REQUEST: ${harEntry.request.method} ${harEntry.request.url}\n`;
     text += `═══════════════════════════════════════════════════════════════\n\n`;
-    
+
     if (isBatchRequest(harEntry)) {
       text += formatBatchPayload(payload);
     } else {
       text += `Payload:\n${formatJson(payload) || '(empty)'}\n`;
     }
-    
+
     text += `\n───────────────────────────────────────────────────────────────\n`;
     text += `RESPONSE: ${harEntry.response.status} ${harEntry.response.statusText || ''}\n`;
     text += `───────────────────────────────────────────────────────────────\n\n`;
-    
+
     if (isBatchRequest(harEntry)) {
       text += formatBatchResponse(response);
     } else {
@@ -1113,7 +1284,7 @@ async function formatEntryForCopy(entry) {
     text += `═══════════════════════════════════════════════════════════════\n\n`;
     text += formatJson(entry.data.data) || '(empty)';
   }
-  
+
   return text;
 }
 
@@ -1123,7 +1294,7 @@ function getSelectedEntriesForCopy() {
   const hiddenSelected = Array.from(selectedIndices)
     .filter(index => !visibleIndices.includes(index))
     .sort((a, b) => a - b);
-  
+
   return [...visibleSelected, ...hiddenSelected]
     .map(index => entries[index])
     .filter(Boolean);
@@ -1132,16 +1303,16 @@ function getSelectedEntriesForCopy() {
 async function copySelected() {
   const selectedEntries = getSelectedEntriesForCopy();
   if (selectedEntries.length === 0) return;
-  
+
   const count = selectedEntries.length;
   setStatus(count === 1 ? "Copying..." : `Copying ${count}...`, "ok");
-  
+
   const parts = [];
   for (const entry of selectedEntries) {
     parts.push(await formatEntryForCopy(entry));
   }
   const text = parts.join('\n\n\n');
-  
+
   if (await copyToClipboard(text)) {
     setStatus(count === 1 ? "✓ Copied!" : `✓ ${count} copied!`, "ok");
   } else {
@@ -1153,16 +1324,16 @@ async function copySelected() {
 async function copyAllFiltered() {
   const filtered = getFilteredEntries();
   if (filtered.length === 0) return;
-  
+
   setStatus(`Copying ${filtered.length}...`, "ok");
-  
+
   const parts = [];
   for (const entry of filtered) {
     parts.push(await formatEntryForCopy(entry));
   }
-  
+
   const text = parts.join('\n\n\n');
-  
+
   if (await copyToClipboard(text)) {
     setStatus(`✓ ${filtered.length} copied!`, "ok");
   } else {
@@ -1178,7 +1349,7 @@ async function copyAllFiltered() {
 function setupPanelResizers() {
   let isResizing = false;
   let currentResizer = null;
-  
+
   resizerH.onmousedown = (e) => {
     isResizing = true;
     currentResizer = 'h';
@@ -1186,7 +1357,7 @@ function setupPanelResizers() {
     document.body.classList.add('resizing');
     e.preventDefault();
   };
-  
+
   resizerV.onmousedown = (e) => {
     isResizing = true;
     currentResizer = 'v';
@@ -1194,10 +1365,10 @@ function setupPanelResizers() {
     document.body.classList.add('resizing-v');
     e.preventDefault();
   };
-  
+
   document.onmousemove = (e) => {
     if (!isResizing) return;
-    
+
     if (currentResizer === 'h') {
       const rect = panelLeft.parentElement.getBoundingClientRect();
       const pct = ((e.clientX - rect.left) / rect.width) * 100;
@@ -1215,7 +1386,7 @@ function setupPanelResizers() {
       }
     }
   };
-  
+
   document.onmouseup = () => {
     if (isResizing) {
       isResizing = false;
@@ -1285,23 +1456,23 @@ tableHead.onclick = (e) => {
 // Keyboard
 document.onkeydown = (e) => {
   if (e.target.tagName === 'INPUT') return;
-  
+
   if (e.key === 'Escape') {
     e.preventDefault();
     deselectEntry();
   }
-  
+
   if ((e.ctrlKey || e.metaKey) && e.key === 'c' && selectedIndices.size > 0) {
     e.preventDefault();
     copySelected();
   }
-  
+
   if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
     e.preventDefault();
     const filtered = getFilteredEntries();
     const indices = filtered.map(entry => entries.indexOf(entry));
     if (indices.length === 0) return;
-    
+
     if (activeIndex == null) {
       selectEntry(indices[0]);
     } else {
@@ -1326,29 +1497,29 @@ document.onkeydown = (e) => {
  */
 function addEntry(entry) {
   entries.push(entry);
-  
+
   // Enforce max entries limit to prevent memory issues
   if (entries.length > MAX_ENTRIES) {
     const removeCount = entries.length - MAX_ENTRIES;
     entries.splice(0, removeCount);
-    
+
     const shiftedSelection = new Set();
     selectedIndices.forEach(index => {
       const shifted = index - removeCount;
       if (shifted >= 0) shiftedSelection.add(shifted);
     });
     selectedIndices = shiftedSelection;
-    
+
     if (activeIndex != null) {
       activeIndex -= removeCount;
       if (activeIndex < 0) activeIndex = null;
     }
-    
+
     if (selectionAnchorIndex != null) {
       selectionAnchorIndex -= removeCount;
       if (selectionAnchorIndex < 0) selectionAnchorIndex = null;
     }
-    
+
     if (activeIndex == null) activeIndex = resolveActiveIndex();
     if (selectedIndices.size === 0) {
       activeIndex = null;
@@ -1390,7 +1561,7 @@ function setupWebSocketCapture() {
       return 'ok';
     })();
   `;
-  
+
   chrome.devtools.inspectedWindow.eval(script, (result, error) => {
     if (!error) pollWebSocket();
   });
@@ -1414,9 +1585,11 @@ function pollWebSocket() {
 // Init
 // ============================================================
 
+rebuildTableHeaders(); // Apply saved column order
 applyColumnWidths();
 applyPanelSizes();
 setupColumnResizers();
+setupColumnDragAndDrop();
 setupPanelResizers();
 setupWebSocketCapture();
 renderTable();
@@ -1428,6 +1601,6 @@ try {
   if (versionLabel && manifest.version) {
     versionLabel.textContent = `v${manifest.version}`;
   }
-} catch (e) {}
+} catch (e) { }
 
 console.log('[NetworkCopier] Ready');
