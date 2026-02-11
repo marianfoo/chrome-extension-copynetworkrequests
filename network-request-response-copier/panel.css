@@ -396,6 +396,15 @@ tbody tr.selected { background: #264f78 !important; }
 .hl-xml-comment { color: #6a9955; font-style: italic; }
 
 /* ============================================================
+   Column Drag & Drop
+   ============================================================ */
+
+th[draggable="true"] { cursor: move; }
+th.dragging { opacity: 0.5; background: #4fc3f7 !important; }
+th.drop-target { border-left: 3px solid #4fc3f7; background: rgba(79, 195, 247, 0.1) !important; }
+th[draggable="true"] .col-resizer { cursor: col-resize; }
+
+/* ============================================================
    Footer
    ============================================================ */
 

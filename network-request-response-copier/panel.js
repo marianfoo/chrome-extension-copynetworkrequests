@@ -54,12 +54,14 @@ let renderPending = false;
 let renderTimeout = null;
 const RENDER_THROTTLE_MS = 100;
 
-// Column widths - load from localStorage or use defaults
+// Column widths and order - load from localStorage or use defaults
 const STORAGE_KEY_COLUMNS = 'networkCopier_columnWidths';
 const STORAGE_KEY_PANELS = 'networkCopier_panelSizes';
+const STORAGE_KEY_COLUMN_ORDER = 'networkCopier_columnOrder'; 
 
 let columnWidths = loadColumnWidths();
 let panelSizes = loadPanelSizes();
+let columnOrder = loadColumnOrder();
 
 function loadColumnWidths() {
   try {
@@ -86,6 +88,21 @@ function loadPanelSizes() {
 function savePanelSizes() {
   try {
     localStorage.setItem(STORAGE_KEY_PANELS, JSON.stringify(panelSizes));
+  } catch (e) {}
+}
+
+function loadColumnOrder() {
+  try {
+    const saved = localStorage.getItem(STORAGE_KEY_COLUMN_ORDER);
+    if (saved) return JSON.parse(saved);
+  } catch (e) {}
+  // Default column order
+  return ['icon', 'method', 'status', 'name', 'url', 'payload'];
+}
+
+function saveColumnOrder() {
+  try {
+    localStorage.setItem(STORAGE_KEY_COLUMN_ORDER, JSON.stringify(columnOrder));
   } catch (e) {}
 }
 
@@ -673,15 +690,26 @@ function renderHttpRow(tr, harEntry, entry) {
   const escapedShortUrl = escapeHtml(shortUrl);
   const escapedPayload = escapeHtml(payloadPreview);
   const escapedPayloadTitle = escapeHtml(payloadPreview.substring(0, 300));
-  
-  tr.innerHTML = `
-    <td class="type-icon">${isBatch ? '📦' : '🌐'}</td>
-    <td><span class="method-badge ${getMethodClass(harEntry.request.method)}">${escapedMethod}</span></td>
-    <td class="${getStatusClass(harEntry.response.status)}">${harEntry.response.status || '-'}</td>
-    <td class="col-name-data" title="${escapedName}">${escapedName}</td>
-    <td class="col-url-data" title="${escapedUrl}">${escapedShortUrl}</td>
-    <td class="col-payload-data payload-preview" title="${escapedPayloadTitle}">${escapedPayload}</td>
-  `;
+
+  // Column data mapping
+  const columnData = {
+    icon: `<td class="type-icon">${isBatch ? '📦' : '🌐'}</td>`,
+    method: `<td><span class="method-badge ${getMethodClass(harEntry.request.method)}">${escapedMethod}</span></td>`,
+    status: `<td class="${getStatusClass(harEntry.response.status)}">${harEntry.response.status || '-'}</td>`,
+    name: `<td class="col-name-data" title="${escapedName}">${escapedName}</td>`,
+    url: `<td class="col-url-data" title="${escapedUrl}">${escapedShortUrl}</td>`,
+    payload: `<td class="col-payload-data payload-preview" title="${escapedPayloadTitle}">${escapedPayload}</td>`
+  };
+
+  // Build row HTML in the correct column order
+  let rowHtml = '';
+  columnOrder.forEach(colKey => {
+    if (columnData[colKey]) {
+      rowHtml += columnData[colKey];
+    }
+  });
+
+  tr.innerHTML = rowHtml;
 }
 
 function renderWsRow(tr, wsData) {
@@ -694,15 +722,26 @@ function renderWsRow(tr, wsData) {
   const escapedUrl = escapeHtml(wsData.url || '');
   const escapedData = escapeHtml(data);
   const escapedDataTitle = escapeHtml(data.substring(0, 300));
-  
-  tr.innerHTML = `
-    <td class="type-icon">${dir}</td>
-    <td><span class="method-badge method-ws">WS</span></td>
-    <td class="${statusClass}">${statusText}</td>
-    <td class="col-name-data">WebSocket</td>
-    <td class="col-url-data" title="${escapedUrl}">${escapedUrl}</td>
-    <td class="col-payload-data payload-preview" title="${escapedDataTitle}">${escapedData}</td>
-  `;
+
+  // Column data mapping
+  const columnData = {
+    icon: `<td class="type-icon">${dir}</td>`,
+    method: `<td><span class="method-badge method-ws">WS</span></td>`,
+    status: `<td class="${statusClass}">${statusText}</td>`,
+    name: `<td class="col-name-data">WebSocket</td>`,
+    url: `<td class="col-url-data" title="${escapedUrl}">${escapedUrl}</td>`,
+    payload: `<td class="col-payload-data payload-preview" title="${escapedDataTitle}">${escapedData}</td>`
+  };
+
+  // Build row HTML in the correct column order
+  let rowHtml = '';
+  columnOrder.forEach(colKey => {
+    if (columnData[colKey]) {
+      rowHtml += columnData[colKey];
+    }
+  });
+
+  tr.innerHTML = rowHtml;
 }
 
 function applyColumnWidths() {
@@ -788,6 +827,138 @@ function setupColumnResizers() {
     // Save column widths to localStorage
     saveColumnWidths();
   });
+}
+
+// ============================================================
+// Column Drag & Drop Reordering
+// ============================================================
+
+const dragState = {
+  draggedColumn: null,
+  draggedIndex: -1,
+  dropTargetIndex: -1
+};
+
+function setupColumnDragAndDrop() {
+  const headers = tableHead.querySelectorAll('th');
+
+  headers.forEach((th, index) => {
+    // Make headers draggable
+    th.setAttribute('draggable', 'true');
+
+    // Drag start
+    th.addEventListener('dragstart', (e) => {
+      // Don't interfere with column resizing
+      if (e.target.classList.contains('col-resizer')) {
+        e.preventDefault();
+        return;
+      }
+
+      dragState.draggedColumn = th;
+      dragState.draggedIndex = Array.from(headers).indexOf(th);
+
+      th.classList.add('dragging');
+      e.dataTransfer.effectAllowed = 'move';
+      e.dataTransfer.setData('text/html', th.innerHTML);
+    });
+
+    // Drag over
+    th.addEventListener('dragover', (e) => {
+      if (!dragState.draggedColumn) return;
+
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+
+      const targetIndex = Array.from(headers).indexOf(th);
+      if (targetIndex !== dragState.draggedIndex) {
+        th.classList.add('drop-target');
+        dragState.dropTargetIndex = targetIndex;
+      }
+    });
+
+    // Drag leave
+    th.addEventListener('dragleave', () => {
+      th.classList.remove('drop-target');
+    });
+
+    // Drop
+    th.addEventListener('drop', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+
+      if (!dragState.draggedColumn) return;
+
+      const targetIndex = Array.from(headers).indexOf(th);
+
+      if (dragState.draggedIndex !== targetIndex) {
+        // Reorder columns
+        reorderColumns(dragState.draggedIndex, targetIndex);
+      }
+
+      th.classList.remove('drop-target');
+    });
+
+    // Drag end
+    th.addEventListener('dragend', () => {
+      headers.forEach(h => {
+        h.classList.remove('dragging', 'drop-target');
+      });
+      dragState.draggedColumn = null;
+      dragState.draggedIndex = -1;
+      dragState.dropTargetIndex = -1;
+    });
+  });
+}
+
+function reorderColumns(fromIndex, toIndex) {
+  // Update column order array
+  const movedColumn = columnOrder[fromIndex];
+  columnOrder.splice(fromIndex, 1);
+  columnOrder.splice(toIndex, 0, movedColumn);
+
+  // Save to localStorage
+  saveColumnOrder();
+
+  // Re-render the table to reflect new order
+  rebuildTableHeaders();
+  renderTable();
+}
+
+function rebuildTableHeaders() {
+  const headerRow = tableHead.querySelector('tr');
+
+  // Build HTML string for all headers in order
+  let headersHtml = '';
+  const columnDefs = {
+    icon: '<th class="col-icon">Type</th>',
+    method: '<th class="col-method sortable" data-sort="method">Method<span class="sort-icon"></span></th>',
+    status: '<th class="col-status sortable" data-sort="status">Status<span class="sort-icon"></span></th>',
+    name: '<th class="col-name sortable resizable" data-sort="name">Name<span class="sort-icon"></span><div class="col-resizer"></div></th>',
+    url: '<th class="col-url sortable resizable" data-sort="url">URL<span class="sort-icon"></span><div class="col-resizer"></div></th>',
+    payload: '<th class="col-payload resizable">Payload Preview<div class="col-resizer"></div></th>'
+  };
+
+  // Build headers in the stored order
+  columnOrder.forEach(colKey => {
+    if (columnDefs[colKey]) {
+      headersHtml += columnDefs[colKey];
+    }
+  });
+
+  // Set all headers at once
+  headerRow.innerHTML = headersHtml;
+
+  // Re-apply sort indicators if there's an active sort
+  updateSortIndicators();
+
+  // Re-setup event listeners
+  setupColumnResizers();
+  setupColumnDragAndDrop();
+}
+
+function setupSortHandlers() {
+  // Note: Sort handlers are already set up via tableHead.onclick in the Events section
+  // This function is kept for consistency but not strictly needed
 }
 
 // ============================================================
@@ -1414,9 +1585,11 @@ function pollWebSocket() {
 // Init
 // ============================================================
 
+rebuildTableHeaders(); // Apply saved column order
 applyColumnWidths();
 applyPanelSizes();
 setupColumnResizers();
+setupColumnDragAndDrop();
 setupPanelResizers();
 setupWebSocketCapture();
 renderTable();
