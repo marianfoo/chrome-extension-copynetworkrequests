@@ -57,7 +57,7 @@ const RENDER_THROTTLE_MS = 100;
 // Column widths and order - load from localStorage or use defaults
 const STORAGE_KEY_COLUMNS = 'networkCopier_columnWidths';
 const STORAGE_KEY_PANELS = 'networkCopier_panelSizes';
-const STORAGE_KEY_COLUMN_ORDER = 'networkCopier_columnOrder';
+const STORAGE_KEY_COLUMN_ORDER = 'networkCopier_columnOrder'; 
 
 let columnWidths = loadColumnWidths();
 let panelSizes = loadPanelSizes();
@@ -67,35 +67,35 @@ function loadColumnWidths() {
   try {
     const saved = localStorage.getItem(STORAGE_KEY_COLUMNS);
     if (saved) return JSON.parse(saved);
-  } catch (e) { }
+  } catch (e) {}
   return { name: 120, url: 180, payload: 250 };
 }
 
 function saveColumnWidths() {
   try {
     localStorage.setItem(STORAGE_KEY_COLUMNS, JSON.stringify(columnWidths));
-  } catch (e) { }
+  } catch (e) {}
 }
 
 function loadPanelSizes() {
   try {
     const saved = localStorage.getItem(STORAGE_KEY_PANELS);
     if (saved) return JSON.parse(saved);
-  } catch (e) { }
+  } catch (e) {}
   return { leftWidth: 55, payloadHeight: 50 }; // percentages
 }
 
 function savePanelSizes() {
   try {
     localStorage.setItem(STORAGE_KEY_PANELS, JSON.stringify(panelSizes));
-  } catch (e) { }
+  } catch (e) {}
 }
 
 function loadColumnOrder() {
   try {
     const saved = localStorage.getItem(STORAGE_KEY_COLUMN_ORDER);
     if (saved) return JSON.parse(saved);
-  } catch (e) { }
+  } catch (e) {}
   // Default column order
   return ['icon', 'method', 'status', 'name', 'url', 'payload'];
 }
@@ -103,7 +103,7 @@ function loadColumnOrder() {
 function saveColumnOrder() {
   try {
     localStorage.setItem(STORAGE_KEY_COLUMN_ORDER, JSON.stringify(columnOrder));
-  } catch (e) { }
+  } catch (e) {}
 }
 
 function applyPanelSizes() {
@@ -218,7 +218,7 @@ function formatJson(str) {
   if (!str || !prettyJsonCheckbox.checked) return str;
   // Try JSON formatting first
   try { return JSON.stringify(JSON.parse(str), null, 2); }
-  catch { }
+  catch {}
   // Try XML formatting as fallback
   const trimmed = str.trim();
   if (trimmed.startsWith('<')) {
@@ -381,7 +381,7 @@ function highlightContent(str) {
   try {
     const formatted = JSON.stringify(JSON.parse(str), null, 2);
     return highlightJson(formatted);
-  } catch { }
+  } catch {}
 
   // Try XML
   const trimmed = str.trim();
@@ -417,7 +417,7 @@ function highlightPreformatted(str) {
       const leading = part.match(/^(\s*)/)[1];
       const trailing = part.match(/(\s*)$/)[1];
       return leading + highlightJson(trimmed) + trailing;
-    } catch { }
+    } catch {}
 
     return escapeHtml(part);
   }).join('');
@@ -1601,6 +1601,6 @@ try {
   if (versionLabel && manifest.version) {
     versionLabel.textContent = `v${manifest.version}`;
   }
-} catch (e) { }
+} catch (e) {}
 
 console.log('[NetworkCopier] Ready');
