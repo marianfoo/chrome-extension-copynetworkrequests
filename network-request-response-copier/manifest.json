@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Network Request & Response Copier",
   "description": "DevTools panel to copy network requests with OData batch parsing, WebSocket support, and advanced filtering.",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "minimum_chrome_version": "110",
   "devtools_page": "devtools.html",
   "permissions": [

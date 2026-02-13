@@ -5,6 +5,11 @@ The format is based on Keep a Changelog.
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-02-13
+### Added
+- feat: implement format selection and syntax highlighting for payload and response panels
+- feat: enhance column customization with drag & drop and visibility options
+- feat: add customizable column order with drag & drop (#2)
 ## [1.2.0] - 2026-02-10
 ### Added
 - feat: add XML formatting, syntax highlighting, and version label
