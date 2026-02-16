@@ -5,6 +5,9 @@ The format is based on Keep a Changelog.
 
 ## [Unreleased]
 
+## [1.3.1] - 2026-02-16
+### Fixed
+- fix: prevent column sorting immediately after resizing
 ## [1.3.0] - 2026-02-13
 ### Added
 - feat: implement format selection and syntax highlighting for payload and response panels
