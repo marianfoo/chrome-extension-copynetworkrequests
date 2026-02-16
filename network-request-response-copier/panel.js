@@ -1417,7 +1417,8 @@ const colResizeState = {
   startX: 0,
   columnKey: null,
   thElement: null,
-  startWidth: 0
+  startWidth: 0,
+  justResized: false  // flag to suppress click-to-sort after resize
 };
 
 // Named handlers so we can add them once (idempotent setup)
@@ -1460,6 +1461,10 @@ function _colResizeMouseup() {
   // Remove active class from resizer
   const activeResizer = tableHead.querySelector('.col-resizer.active');
   if (activeResizer) activeResizer.classList.remove('active');
+
+  // Flag that a resize just finished so the subsequent click event
+  // (mousedown → mouseup → click) does not trigger column sorting.
+  colResizeState.justResized = true;
 
   colResizeState.active = false;
   colResizeState.thElement = null;
@@ -2222,9 +2227,14 @@ copyResponseBtn.onclick = async () => {
   if (await copyToClipboard(responseContent.textContent)) setStatus("✓ Response copied!", "ok");
 };
 
-// Sort header clicks (but not on resizer)
+// Sort header clicks (but not on resizer or right after a column resize)
 tableHead.onclick = (e) => {
   if (e.target.classList.contains('col-resizer')) return;
+  // After a column resize the browser fires a click; ignore it.
+  if (colResizeState.justResized) {
+    colResizeState.justResized = false;
+    return;
+  }
   const th = e.target.closest('th.sortable');
   if (th && th.dataset.sort) {
     handleSort(th.dataset.sort);
