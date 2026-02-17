@@ -903,6 +903,22 @@ function highlightContentWithFormat(str, format) {
 }
 
 /**
+ * Escape HTML but still colorize URL parameters in ──── separator lines.
+ * Used when Pretty mode is off or format is "text" — no syntax highlighting
+ * for JSON/code blocks, but URL parameters still get alternating colors.
+ * @param {string} str - Pre-formatted text that may contain separator lines
+ * @returns {string} HTML string with colorized URL params in separator lines
+ */
+function escapeWithColorizedSeparators(str) {
+  if (!str) return '';
+  const parts = str.split(/(────[^\n]*────)/);
+  return parts.map(part => {
+    if (part.startsWith('────')) return colorizeSeparatorLine(part);
+    return escapeHtml(part);
+  }).join('');
+}
+
+/**
  * Highlight pre-formatted batch text using the specified format language.
  * Splits on ──── separator lines and highlights blocks between them.
  * @param {string} str - Pre-formatted batch text with separator lines
@@ -910,16 +926,17 @@ function highlightContentWithFormat(str, format) {
  * @returns {string} HTML string with syntax highlighting
  */
 function highlightPreformattedWithFormat(str, format) {
-  if (!str || !prettyJsonCheckbox.checked) return escapeHtml(str || '');
+  if (!str) return '';
+  // Even without Pretty mode, still colorize URL params in separator lines
+  if (!prettyJsonCheckbox.checked || format === 'text') return escapeWithColorizedSeparators(str);
   if (format === 'auto') return highlightPreformatted(str);
-  if (format === 'text') return escapeHtml(str);
 
   // Split on separator lines (──── ... ────), keeping separators in result
   const parts = str.split(/(────[^\n]*────)/);
 
   return parts.map(part => {
-    // Separator line — escape as plain text
-    if (part.startsWith('────')) return escapeHtml(part);
+    // Separator line — colorize URL parameters for readability
+    if (part.startsWith('────')) return colorizeSeparatorLine(part);
 
     const trimmed = part.trim();
     if (!trimmed) return escapeHtml(part);
@@ -979,14 +996,16 @@ function highlightContent(str) {
  * Splits on ──── separator lines, highlights JSON blocks between them.
  */
 function highlightPreformatted(str) {
-  if (!str || !prettyJsonCheckbox.checked) return escapeHtml(str || '');
+  if (!str) return '';
+  // Even without Pretty mode, still colorize URL params in separator lines
+  if (!prettyJsonCheckbox.checked) return escapeWithColorizedSeparators(str);
 
   // Split on separator lines (──── ... ────), keeping separators in result
   const parts = str.split(/(────[^\n]*────)/);
 
   return parts.map(part => {
-    // Separator line — escape as plain text
-    if (part.startsWith('────')) return escapeHtml(part);
+    // Separator line — colorize URL parameters for readability
+    if (part.startsWith('────')) return colorizeSeparatorLine(part);
 
     const trimmed = part.trim();
     if (!trimmed) return escapeHtml(part);
@@ -1031,6 +1050,61 @@ function urlDecode(str) {
   } catch (e) {
     return str;
   }
+}
+
+// Number of alternating URL parameter colors (matches .url-param-0 … .url-param-5 in CSS)
+const URL_PARAM_COLOR_COUNT = 6;
+
+/**
+ * Colorize URL query parameters with alternating colors for readability.
+ * Each query parameter (key=value pair) gets a distinct color, making it easy
+ * to visually parse complex OData URLs with system query options like
+ * $filter, $select, $expand, $top, $skip, $orderby, $inlinecount, etc.
+ *
+ * @param {string} urlStr - Decoded URL string (path + optional query string)
+ * @returns {string} HTML string with colored parameter spans
+ */
+function colorizeUrlParams(urlStr) {
+  if (!urlStr) return '';
+
+  const qIndex = urlStr.indexOf('?');
+  if (qIndex === -1) return escapeHtml(urlStr);
+
+  const path = urlStr.substring(0, qIndex);
+  const queryString = urlStr.substring(qIndex + 1);
+
+  // Split on & to get individual key=value parameters
+  const params = queryString.split('&');
+
+  let html = '<span class="url-path">' + escapeHtml(path) + '</span>';
+  html += '<span class="url-separator">?</span>';
+
+  params.forEach((param, i) => {
+    if (i > 0) {
+      html += '<span class="url-separator">&amp;</span>';
+    }
+    const colorIndex = i % URL_PARAM_COLOR_COUNT;
+    html += '<span class="url-param-' + colorIndex + '">' + escapeHtml(param) + '</span>';
+  });
+
+  return html;
+}
+
+/**
+ * Colorize a ──── METHOD url ──── separator line used in request payload headers.
+ * Applies URL parameter colorization to the URL portion while keeping the
+ * decoration and method in the default text color.
+ *
+ * @param {string} line - Separator line like "──── GET /path?a=1&b=2 ────"
+ * @returns {string} HTML string with colored URL parameters
+ */
+function colorizeSeparatorLine(line) {
+  // Match the separator format: ──── METHOD url ────
+  const match = line.match(/^(──── \S+ )(.*?)( ────)$/);
+  if (match) {
+    return escapeHtml(match[1]) + colorizeUrlParams(match[2]) + escapeHtml(match[3]);
+  }
+  return escapeHtml(line);
 }
 
 function getMethodClass(method) {
@@ -1828,11 +1902,11 @@ async function showHttpDetails(harEntry) {
   if (isBatchRequest(harEntry)) {
     payloadContent.innerHTML = highlightPreformattedWithFormat(formatBatchPayload(payload), resolvedPayloadFormat);
   } else {
-    // For regular requests, show method + decoded URL, then highlighted body
+    // For regular requests, show method + decoded URL with colorized query params, then highlighted body
     const decodedUrl = urlDecode(url);
     const shortUrl = decodedUrl.replace(/^https?:\/\/[^/]+/, '');
-    const headerLine = `──── ${method} ${shortUrl} ────\n`;
-    payloadContent.innerHTML = escapeHtml(headerLine) + (payload ? highlightContentWithFormat(payload, resolvedPayloadFormat) : escapeHtml('(no body)'));
+    const headerHtml = escapeHtml('──── ' + method + ' ') + colorizeUrlParams(shortUrl) + escapeHtml(' ────') + '\n';
+    payloadContent.innerHTML = headerHtml + (payload ? highlightContentWithFormat(payload, resolvedPayloadFormat) : escapeHtml('(no body)'));
   }
   
   responseContent.textContent = 'Loading...';

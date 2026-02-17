@@ -426,6 +426,17 @@ tbody tr.selected { background: #264f78 !important; }
 .hl-js-operator { color: #d4d4d4; }
 .hl-js-punctuation { color: #d4d4d4; }
 
+/* URL parameter alternating colors – chosen for good contrast on dark backgrounds
+   and reasonable readability on light backgrounds (mid-brightness hues). */
+.url-param-0 { color: #4ec9b0; }  /* Teal */
+.url-param-1 { color: #c792ea; }  /* Lilac */
+.url-param-2 { color: #f0a875; }  /* Warm Orange */
+.url-param-3 { color: #82aaff; }  /* Periwinkle Blue */
+.url-param-4 { color: #c3d888; }  /* Lime Green */
+.url-param-5 { color: #e57ea1; }  /* Rose Pink */
+.url-separator { color: #808080; }  /* Dim separator for ? and & */
+.url-path { }  /* Inherits default content color */
+
 /* CSS token colors */
 .hl-css-comment { color: #6a9955; font-style: italic; }
 .hl-css-string { color: #ce9178; }
