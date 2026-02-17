@@ -6,6 +6,7 @@
 // ============================================================
 
 const filterInput = document.getElementById("filter-input");
+const filterClearBtn = document.getElementById("filter-clear");
 const methodFilter = document.getElementById("method-filter");
 const showHttpCheckbox = document.getElementById("show-http");
 const showWsCheckbox = document.getElementById("show-ws");
@@ -56,10 +57,11 @@ let renderPending = false;
 let renderTimeout = null;
 const RENDER_THROTTLE_MS = 100;
 
-// Column widths and order - load from localStorage or use defaults
+// Column widths, order, and filter - load from localStorage or use defaults
 const STORAGE_KEY_COLUMNS = 'networkCopier_columnWidths';
 const STORAGE_KEY_PANELS = 'networkCopier_panelSizes';
 const STORAGE_KEY_COLUMN_ORDER = 'networkCopier_columnOrder';
+const STORAGE_KEY_FILTER = 'networkCopier_filter';
 
 // All available column keys (defines the "natural" order for inserting new columns)
 const ALL_COLUMN_KEYS = ['icon', 'method', 'status', 'resourceType', 'name', 'url', 'size', 'time', 'payload'];
@@ -125,6 +127,19 @@ function loadColumnOrder() {
 function saveColumnOrder() {
   try {
     localStorage.setItem(STORAGE_KEY_COLUMN_ORDER, JSON.stringify(columnOrder));
+  } catch (e) {}
+}
+
+function loadFilter() {
+  try {
+    return localStorage.getItem(STORAGE_KEY_FILTER) || '';
+  } catch (e) {}
+  return '';
+}
+
+function saveFilter(value) {
+  try {
+    localStorage.setItem(STORAGE_KEY_FILTER, value);
   } catch (e) {}
 }
 
@@ -2253,9 +2268,29 @@ function setupPanelResizers() {
 // ============================================================
 
 let filterTimeout = null;
+
+/** Toggle visibility of the filter clear button based on input content */
+function updateFilterClearBtn() {
+  filterClearBtn.hidden = !filterInput.value;
+}
+
+// Restore persisted filter value from previous session
+filterInput.value = loadFilter();
+updateFilterClearBtn();
+
 filterInput.oninput = () => {
+  updateFilterClearBtn();
+  saveFilter(filterInput.value);
   clearTimeout(filterTimeout);
   filterTimeout = setTimeout(renderTable, 150);
+};
+
+filterClearBtn.onclick = () => {
+  filterInput.value = '';
+  updateFilterClearBtn();
+  saveFilter('');
+  renderTable();
+  filterInput.focus();
 };
 
 methodFilter.onchange = renderTable;

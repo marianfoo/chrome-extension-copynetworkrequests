@@ -11,7 +11,10 @@
       <div class="toolbar-row">
         <div class="toolbar-left">
           <span class="title">🌐 Network Copier</span>
-          <input id="filter-input" type="text" placeholder="Filter URL, method, status, payload..." />
+          <div class="filter-wrapper">
+            <input id="filter-input" type="text" placeholder="Filter URL, method, status, payload..." />
+            <button id="filter-clear" class="filter-clear" title="Clear filter" hidden>✕</button>
+          </div>
         </div>
         <div class="toolbar-right">
           <select id="method-filter" title="Filter by HTTP method">
