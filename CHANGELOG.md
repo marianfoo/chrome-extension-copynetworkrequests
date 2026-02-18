@@ -5,6 +5,11 @@ The format is based on Keep a Changelog.
 
 ## [Unreleased]
 
+## [1.4.0] - 2026-02-18
+### Added
+- feat: enhance batch response handling and styling
+- feat: enhance filter input with clear button functionality
+- feat: add colorization for URL parameters in request payloads
 ## [1.3.1] - 2026-02-16
 ### Fixed
 - fix: prevent column sorting immediately after resizing
