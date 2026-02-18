@@ -2,5 +2,5 @@
   "version": "1.4.0",
   "status": "pending",
   "chrome": false,
-  "edge": false
+  "edge": true
 }
