@@ -1929,14 +1929,46 @@ async function showHttpDetails(harEntry) {
   
   if (isBatchRequest(harEntry)) {
     // Panel display: show only bodies without status headers (status is in the table)
-    const bodies = extractBatchResponseBodies(responseBody);
-    if (bodies.length === 0) {
-      responseContent.innerHTML = responseBody ? escapeHtml(responseBody) : escapeHtml('(empty)');
+    const parts = extractBatchResponseBodies(responseBody);
+    if (parts.length === 0) {
+      // Batch URL returned a plain (non-multipart) response — format it like a regular response
+      responseContent.innerHTML = responseBody
+        ? highlightContentWithFormat(responseBody, resolvedResponseFormat)
+        : escapeHtml('(empty)');
     } else {
-      const separator = `\n<span style="color:#404040">${escapeHtml('─'.repeat(50))}</span>\n\n`;
-      responseContent.innerHTML = bodies
-        .map(b => b ? highlightContentWithFormat(b, resolvedResponseFormat) : escapeHtml('(no body)'))
-        .join(bodies.length > 1 ? separator : '');
+      const separator = `\n<span class="batch-response-separator">${escapeHtml('─'.repeat(50))}</span>\n\n`;
+      const partsHtml = parts
+        .map((part) => {
+          const { body, sapMessage } = part;
+          // Order: metadata first, then sap-message, then JSON body
+          let html = '';
+          const metaLines = [];
+          if (part.statusLine) metaLines.push(part.statusLine);
+          if (part.mimeHeaders?.length) {
+            metaLines.push('[MIME Headers]');
+            part.mimeHeaders.forEach(h => metaLines.push(`${h.name}: ${h.value}`));
+          }
+          if (part.httpHeaders?.length) {
+            metaLines.push('[HTTP Headers]');
+            part.httpHeaders.forEach(h => metaLines.push(`${h.name}: ${h.value}`));
+          }
+          if (metaLines.length > 0) {
+            html += `<span class="batch-metadata-block">${escapeHtml(metaLines.join('\n'))}</span>\n`;
+          }
+          if (sapMessage) {
+            html += `<span class="sap-message-divider">${escapeHtml('──── sap-message ────')}</span>\n`;
+            html += `<span class="sap-message-block">${highlightContentWithFormat(sapMessage, 'json')}</span>\n`;
+          }
+          html += `<span class="sap-message-divider">${escapeHtml('──── response body ────')}</span>\n`;
+          html += body ? highlightContentWithFormat(body, resolvedResponseFormat) : escapeHtml('(no body)');
+          return html;
+        })
+        .join(parts.length > 1 ? separator : '');
+
+      // Always include full raw batch response at the end so no wire-level information is lost.
+      responseContent.innerHTML = partsHtml
+        + `\n<span class="sap-message-divider">${escapeHtml('──── raw batch response (full) ────')}</span>\n`
+        + `<span class="batch-metadata-block">${escapeHtml(responseBody)}</span>`;
     }
   } else {
     responseContent.innerHTML = responseBody ? highlightContentWithFormat(responseBody, resolvedResponseFormat) : escapeHtml('(empty)');
@@ -1991,63 +2023,285 @@ function formatBatchPayload(payload) {
   return lines.join('\n');
 }
 
-function formatBatchResponse(response) {
-  if (!response) return '(empty)';
-  
-  const lines = [];
-  const regex = /HTTP\/[\d.]+\s+(\d+)\s*([^\r\n]*)/gi;
-  let match;
-  const positions = [];
-  
-  while ((match = regex.exec(response)) !== null) {
-    positions.push({ index: match.index, status: match[1], text: match[2], full: match[0] });
+/**
+ * Split text into header block and body at the first HTTP blank-line separator.
+ * Returns { headers, body } where headers/body are never null.
+ */
+function splitHeadersAndBody(text) {
+  const rnrn = text.indexOf('\r\n\r\n');
+  if (rnrn !== -1) {
+    return {
+      headers: text.substring(0, rnrn),
+      body: text.substring(rnrn + 4)
+    };
   }
-  
-  if (positions.length === 0) return response;
-  
-  for (let i = 0; i < positions.length; i++) {
-    const pos = positions[i];
-    const endIdx = i < positions.length - 1 ? positions[i + 1].index : response.length;
-    const section = response.substring(pos.index + pos.full.length, endIdx);
-    const jsonMatch = section.match(/\{[\s\S]*?\}(?=\s*(?:--|$|\r?\n--))/);
-    const body = jsonMatch ? jsonMatch[0] : '';
-    
-    lines.push(`──── Response ${pos.status} ${pos.text} ────`);
-    lines.push(body ? formatJson(body) : '(no body)');
-    lines.push('');
+  const nn = text.indexOf('\n\n');
+  if (nn !== -1) {
+    return {
+      headers: text.substring(0, nn),
+      body: text.substring(nn + 2)
+    };
   }
-  
-  return lines.join('\n');
+  return { headers: text, body: '' };
 }
 
 /**
- * Extract raw body strings from a batch response (no status headers).
- * Used for panel display where status is already visible in the table.
- * Returns an array of raw body strings.
+ * Parse HTTP/MIME headers (supports folded continuation lines).
+ * Returns ordered header pairs and a lowercase lookup map.
+ */
+function parseHeaderBlock(headerText) {
+  const pairs = [];
+  const map = {};
+  if (!headerText) return { pairs, map };
+
+  const rawLines = headerText.split(/\r?\n/);
+  let currentName = '';
+  let currentValue = '';
+
+  function pushCurrent() {
+    if (!currentName) return;
+    const name = currentName.trim();
+    const value = currentValue.trim();
+    pairs.push({ name, value });
+    const key = name.toLowerCase();
+    if (map[key]) map[key] += ', ' + value;
+    else map[key] = value;
+    currentName = '';
+    currentValue = '';
+  }
+
+  for (const line of rawLines) {
+    if (!line) continue;
+    if ((line.startsWith(' ') || line.startsWith('\t')) && currentName) {
+      // RFC-style header folding continuation
+      currentValue += ' ' + line.trim();
+      continue;
+    }
+    pushCurrent();
+    const idx = line.indexOf(':');
+    if (idx === -1) continue;
+    currentName = line.substring(0, idx);
+    currentValue = line.substring(idx + 1);
+  }
+  pushCurrent();
+
+  return { pairs, map };
+}
+
+/**
+ * Extract multipart boundary from a Content-Type value.
+ */
+function extractBoundary(contentType) {
+  if (!contentType) return '';
+  const m = contentType.match(/boundary\s*=\s*(?:"([^"]+)"|([^;]+))/i);
+  return (m ? (m[1] || m[2] || '') : '').trim();
+}
+
+/**
+ * Parse a multipart/mixed body into individual raw part payloads.
+ * Preamble/epilogue are ignored by design (RFC 2046), but all part content is preserved.
+ */
+function parseMultipartByBoundary(raw, boundary) {
+  if (!raw || !boundary) return [];
+
+  const lines = raw.replace(/\r\n/g, '\n').split('\n');
+  const startMarker = `--${boundary}`;
+  const endMarker = `--${boundary}--`;
+  const parts = [];
+  let inPart = false;
+  let buf = [];
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (trimmed === startMarker || trimmed === endMarker) {
+      if (inPart) {
+        parts.push(buf.join('\n').replace(/^\n+|\n+$/g, ''));
+        buf = [];
+      }
+      inPart = trimmed !== endMarker;
+      continue;
+    }
+    if (inPart) buf.push(line);
+  }
+
+  return parts.filter(Boolean);
+}
+
+/**
+ * Parse one application/http response payload.
+ * Returns a normalized part object with status line, headers, body, and sap-message.
+ */
+function parseApplicationHttpPart(httpPayload, mimeHeaders = []) {
+  const normalized = (httpPayload || '').replace(/\r\n/g, '\n').trim();
+  if (!normalized) {
+    return {
+      statusLine: '',
+      statusCode: 0,
+      statusText: '',
+      mimeHeaders,
+      httpHeaders: [],
+      sapMessage: '',
+      body: '',
+      rawHttp: '',
+      rawPart: ''
+    };
+  }
+
+  const firstNl = normalized.indexOf('\n');
+  const statusLine = firstNl === -1 ? normalized : normalized.substring(0, firstNl).trim();
+  const rest = firstNl === -1 ? '' : normalized.substring(firstNl + 1);
+  const split = splitHeadersAndBody(rest);
+  const parsedHttpHeaders = parseHeaderBlock(split.headers);
+  const sapMessage = parsedHttpHeaders.map['sap-message'] || '';
+  const statusMatch = statusLine.match(/^HTTP\/[\d.]+\s+(\d+)\s*(.*)$/i);
+
+  return {
+    statusLine,
+    statusCode: statusMatch ? Number(statusMatch[1]) : 0,
+    statusText: statusMatch ? (statusMatch[2] || '').trim() : '',
+    mimeHeaders,
+    httpHeaders: parsedHttpHeaders.pairs,
+    sapMessage,
+    body: (split.body || '').trim(),
+    rawHttp: normalized,
+    rawPart: normalized
+  };
+}
+
+/**
+ * Recursively parse MIME parts for OData batch responses (v2 + v4).
+ * Handles nested multipart changesets and application/http parts.
+ */
+function parseMimePartRecursive(rawPart) {
+  const split = splitHeadersAndBody(rawPart || '');
+  const parsedMimeHeaders = parseHeaderBlock(split.headers);
+  const contentType = parsedMimeHeaders.map['content-type'] || '';
+  const partBody = split.body || '';
+
+  if (/multipart\/mixed/i.test(contentType)) {
+    const nestedBoundary = extractBoundary(contentType);
+    const nestedParts = parseMultipartByBoundary(partBody, nestedBoundary);
+    const result = [];
+    nestedParts.forEach((child) => {
+      result.push(...parseMimePartRecursive(child));
+    });
+    return result;
+  }
+
+  if (/application\/http/i.test(contentType) || /^\s*HTTP\/[\d.]+/i.test(partBody)) {
+    return [parseApplicationHttpPart(partBody, parsedMimeHeaders.pairs)];
+  }
+
+  // Best-effort fallback for unknown MIME part types: keep raw data, don't lose information.
+  return [{
+    statusLine: '',
+    statusCode: 0,
+    statusText: '',
+    mimeHeaders: parsedMimeHeaders.pairs,
+    httpHeaders: [],
+    sapMessage: '',
+    body: (partBody || '').trim(),
+    rawHttp: (partBody || '').trim(),
+    rawPart: (rawPart || '').trim()
+  }];
+}
+
+/**
+ * Parse OData batch response into normalized response parts.
+ * Fallback strategy:
+ *  1) multipart boundary parse (spec-compliant path)
+ *  2) HTTP status line scan (best-effort recovery)
+ *  3) single raw fallback part (never lose data)
  */
 function extractBatchResponseBodies(response) {
   if (!response) return [];
 
-  const regex = /HTTP\/[\d.]+\s+(\d+)\s*([^\r\n]*)/gi;
-  let match;
+  const normalized = response.replace(/\r\n/g, '\n');
+  let boundary = '';
+  for (const line of normalized.split('\n')) {
+    const m = line.trim().match(/^--(.+?)(--)?$/);
+    if (m && m[1]) {
+      boundary = m[1].trim();
+      break;
+    }
+  }
+
+  if (boundary) {
+    const topLevelParts = parseMultipartByBoundary(normalized, boundary);
+    if (topLevelParts.length > 0) {
+      const parsed = [];
+      topLevelParts.forEach((p) => parsed.push(...parseMimePartRecursive(p)));
+      if (parsed.length > 0) return parsed;
+    }
+  }
+
+  // Best-effort recovery for malformed/non-standard payloads:
+  // scan for HTTP response start lines and parse each block.
+  const regex = /HTTP\/[\d.]+\s+\d+\s*[^\r\n]*/gi;
   const positions = [];
-
+  let match;
   while ((match = regex.exec(response)) !== null) {
-    positions.push({ index: match.index, full: match[0] });
+    positions.push({ index: match.index });
+  }
+  if (positions.length > 0) {
+    return positions.map((pos, i) => {
+      const endIdx = i < positions.length - 1 ? positions[i + 1].index : response.length;
+      const section = response.substring(pos.index, endIdx);
+      return parseApplicationHttpPart(section, []);
+    });
   }
 
-  if (positions.length === 0) return [];
+  // Final fallback: preserve entire raw response as a single displayable part.
+  return [{
+    statusLine: '',
+    statusCode: 0,
+    statusText: '',
+    mimeHeaders: [],
+    httpHeaders: [],
+    sapMessage: '',
+    body: response.trim(),
+    rawHttp: response.trim(),
+    rawPart: response.trim()
+  }];
+}
 
-  const bodies = [];
-  for (let i = 0; i < positions.length; i++) {
-    const pos = positions[i];
-    const endIdx = i < positions.length - 1 ? positions[i + 1].index : response.length;
-    const section = response.substring(pos.index + pos.full.length, endIdx);
-    const jsonMatch = section.match(/\{[\s\S]*?\}(?=\s*(?:--|$|\r?\n--))/);
-    bodies.push(jsonMatch ? jsonMatch[0] : '');
-  }
+/** Convenience wrapper — returns only the body string (used by formatBatchResponse). */
+function extractHttpBody(section) {
+  return parseApplicationHttpPart(section, []).body;
+}
 
-  return bodies;
+function formatBatchResponse(response) {
+  if (!response) return '(empty)';
+
+  const parts = extractBatchResponseBodies(response);
+  if (parts.length === 0) return response;
+
+  const lines = [];
+  parts.forEach((part, idx) => {
+    const label = part.statusLine || `Part ${idx + 1}`;
+    lines.push(`──── Response ${label} ────`);
+
+    if (part.mimeHeaders.length > 0) {
+      lines.push('[MIME Headers]');
+      part.mimeHeaders.forEach(h => lines.push(`${h.name}: ${h.value}`));
+    }
+
+    if (part.httpHeaders.length > 0) {
+      lines.push('[HTTP Headers]');
+      part.httpHeaders.forEach(h => lines.push(`${h.name}: ${h.value}`));
+    }
+
+    if (part.sapMessage) {
+      lines.push('[sap-message]');
+      lines.push(formatJson(part.sapMessage));
+    }
+
+    lines.push('[Body]');
+    lines.push(part.body ? formatJson(part.body) : '(no body)');
+    lines.push('');
+  });
+
+  return lines.join('\n');
 }
 
 // ============================================================

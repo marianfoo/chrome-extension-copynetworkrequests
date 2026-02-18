@@ -466,6 +466,14 @@ tbody tr.selected { background: #264f78 !important; }
 .url-separator { color: #808080; }  /* Dim separator for ? and & */
 .url-path { }  /* Inherits default content color */
 
+/* SAP sap-message header block */
+.sap-message-block { }
+.sap-message-divider { color: #505050; font-style: italic; }
+.batch-metadata-block { color: #7a7a7a; }
+
+/* Separator line between multiple batch sub-responses */
+.batch-response-separator { color: #404040; }
+
 /* CSS token colors */
 .hl-css-comment { color: #6a9955; font-style: italic; }
 .hl-css-string { color: #ce9178; }
